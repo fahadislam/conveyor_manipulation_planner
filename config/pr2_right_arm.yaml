@@ -1,0 +1,19 @@
+planning:
+  discretization:
+    r_shoulder_pan_joint    0.017453292519943295
+    r_shoulder_lift_joint   0.017453292519943295
+    r_upper_arm_roll_joint  0.017453292519943295
+    r_elbow_flex_joint      0.017453292519943295
+    r_forearm_roll_joint    0.017453292519943295
+    r_wrist_flex_joint      0.017453292519943295
+    r_wrist_roll_joint      0.017453292519943295
+  use_xyz_snap_mprim: false
+  use_rpy_snap_mprim: false
+  use_xyzrpy_snap_mprim: false
+  use_short_dist_mprims: false
+  xyz_snap_dist_thresh: 0.2
+  rpy_snap_dist_thresh: 0.0
+  xyzrpy_snap_dist_thresh: 0.0
+  short_dist_mprims_thresh: 0.4
+  shortcut_path: true
+  # plan_output_dir:

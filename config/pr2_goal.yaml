@@ -1,0 +1,136 @@
+# initial_configuration:
+#   joint_state:
+#     - { name: torso_lift_joint,       position: 0.16825 }
+#     - { name: r_shoulder_pan_joint,   position: -1.87361095 }
+#     - { name: r_shoulder_lift_joint,  position: 1.1915363 }
+#     - { name: r_upper_arm_roll_joint, position: -1.71042267 }
+#     - { name: r_elbow_flex_joint,     position: -2.11307013 } #-0.2 }
+#     - { name: r_forearm_roll_joint,   position: 3.66519 }
+#     - { name: r_wrist_flex_joint,     position: -0.4839798 } #-0.2 }
+#     - { name: r_wrist_roll_joint,     position: 0.0 }
+
+# initial_configuration:  
+#   joint_state:
+#     - { name: torso_lift_joint,       position: 0.16825 }
+#     - { name: r_shoulder_pan_joint,   position: -1.91986 }
+#     - { name: r_shoulder_lift_joint,  position: 0.279253 }
+#     - { name: r_upper_arm_roll_joint, position: -1.22173 }
+#     - { name: r_elbow_flex_joint,     position: -0.471239 } #-0.2 }
+#     - { name: r_forearm_roll_joint,   position: 1.0472 }
+#     - { name: r_wrist_flex_joint,     position: -0.134914 } #-0.2 }
+#     - { name: r_wrist_roll_joint,     position: 0.0 }
+
+initial_configuration:  
+  joint_state:
+    - { name: torso_lift_joint,       position: 0.16825 }
+    # - { name: torso_lift_joint,       position: 0.28 }
+    - { name: r_shoulder_pan_joint,   position: -1.91986 }
+    - { name: r_shoulder_lift_joint,  position: 0.0 }
+    # - { name: r_shoulder_lift_joint,  position: 0.279253 }
+    - { name: r_upper_arm_roll_joint, position: -1.22173 }
+    - { name: r_elbow_flex_joint,     position: -0.471239 } #-0.2 }
+    - { name: r_forearm_roll_joint,   position: 1.0472 }
+    - { name: r_wrist_flex_joint,     position: -0.134914 } #-0.2 }
+    - { name: r_wrist_roll_joint,     position: 0.0 }
+
+# 0.379495,0.348722,-1.64078,-1.09926,0.418881,-0.134914,-0.558505,4.949656861
+# initial_configuration:  
+#   joint_state:
+#     - { name: torso_lift_joint,       position: 0.16825 }
+#     - { name: r_shoulder_pan_joint,   position: 0.379495 }
+#     - { name: r_shoulder_lift_joint,  position: 0.348722 }
+#     - { name: r_upper_arm_roll_joint, position: -1.64078 }
+#     - { name: r_elbow_flex_joint,     position: -1.09926 } #-0.2 }
+#     - { name: r_forearm_roll_joint,   position: 0.418881 }
+#     - { name: r_wrist_flex_joint,     position: -0.134914 } #-0.2 }
+#     - { name: r_wrist_roll_joint,     position: -0.558505 }
+
+
+conveyor_object:
+  # shape: Cylinder
+  shape: Box
+
+  cylinder_params:
+    radius: 0.02
+    height: 0.2
+
+  box_params:
+    size_x: 0.1
+    size_y: 0.03
+    size_z: 0.1
+
+  # box_params:
+  #   size_x: 0.18
+  #   size_y: 0.03
+  #   size_z: 0.085
+
+  velocity:
+    x: 0.0
+    y: -0.2  #-0.165
+    z: 0.0
+
+  height: 0.71825
+
+## Cylinder
+  # pose:
+  #   x: 0.60
+  #   y: 0.0
+  #   z: 0.71825
+  #   roll: 0.0
+  #   pitch: 0.0
+  #   yaw: 0.0
+
+  # grasp:
+  #   x: -0.02
+  #   y: 0.0
+  #   z: 0.0
+  #   roll: 3.14
+  #   pitch: 0.0
+  #   yaw: 0.0
+
+## Box
+  pose:
+    x: 0.55
+    y: 1.3
+    z: 0.71825
+    roll: 0.0
+    pitch: 0.0
+    yaw: 1.57079632679
+    # yaw: 0.785398
+
+  # G1: side
+  # grasp:
+  #   x: 0.0
+  #   y: 0.0
+  #   z: 0.0
+  #   roll: 3.14
+  #   pitch: 0.0
+  #   yaw: 0.0
+
+  # # G3: top   GOOD
+  grasp:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    roll: 0.0
+    pitch: -1.57079632679
+    yaw: 0.0
+
+  # # # G2: side
+  # grasp:
+  #   x: 0.0
+  #   y: 0.0
+  #   z: 0.0
+  #   roll: 3.14
+  #   pitch: 0.0
+  #   yaw: 3.14
+
+  # #G4: top
+  # grasp:
+  #   x: 0.0
+  #   y: 0.0
+  #   z: 0.0
+  #   roll: 3.14
+  #   pitch: 1.57079632679
+  #   yaw: 0.0
+

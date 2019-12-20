@@ -1,0 +1,64 @@
+<launch>
+    <arg name="debug" default="false"/>
+
+    <param name="robot_description" command="$(find xacro)/xacro.py '$(find pr2_description)/robots/pr2.urdf.xacro'"/>
+
+    <arg unless="$(arg debug)" name="launch-prefix" value=""/>
+    <arg     if="$(arg debug)" name="launch-prefix" value="gdb ex --args"/>
+
+    <node pkg="conveyor_manipulation_planner" type="callPlannerConveyor" name="call_planner_conveyor"
+            launch-prefix="$(arg launch-prefix)">
+        <param name="planning_frame" value="odom_combined"/>
+
+        <!-- 1. robot model (for planning) -->
+        <rosparam param="robot_model">
+            group_name: right_arm
+            planning_joints:
+                r_shoulder_pan_joint
+                r_shoulder_lift_joint
+                r_upper_arm_roll_joint
+                r_elbow_flex_joint
+                r_forearm_roll_joint
+                r_wrist_flex_joint
+                r_wrist_roll_joint
+            kinematics_frame:
+                torso_lift_link
+            chain_tip_link:
+                r_gripper_tool_frame
+        </rosparam>
+
+        <rosparam param="robot_model_larm">
+            group_name: left_arm
+            planning_joints:
+                l_shoulder_pan_joint
+                l_shoulder_lift_joint
+                l_upper_arm_roll_joint
+                l_elbow_flex_joint
+                l_forearm_roll_joint
+                l_wrist_flex_joint
+                l_wrist_roll_joint
+            kinematics_frame:
+                torso_lift_link
+            chain_tip_link:
+                l_gripper_tool_frame
+        </rosparam>
+
+        <!-- collision checking -->
+        <rosparam command="load" file="$(find sbpl_collision_checking_test)/config/collision_model_pr2.yaml"/>
+
+        <!-- planner params -->
+        <rosparam command="load" file="$(find conveyor_manipulation_planner)/config/pr2_right_arm.yaml"/>
+        <param name="planning/mprim_filename" value="$(find conveyor_manipulation_planner)/config/pr2.mprim"/>
+        <param name="allowed_planning_time" value="1000.0"/>
+
+        <!-- 2. scene -->
+        <!-- 2.1 robot state -->
+        <rosparam command="load" file="$(find conveyor_manipulation_planner)/config/pr2_goal.yaml"/>
+
+        <!-- 2.2 world state -->
+        <param name="object_filename" value="$(find smpl_test)/env/tabletop.env"/>
+
+        <!-- 3. scenario -->
+    </node>
+</launch>
+
