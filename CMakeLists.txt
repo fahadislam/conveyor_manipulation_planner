@@ -45,7 +45,7 @@ add_library(
     src/conveyor_planner.cpp
     src/hkey_dijkstra.cpp
     src/conversions.cpp
-    src/profile.cpp
+    #src/profile.cpp
     src/iterative_parabolic_time_parameterization.cpp)
 target_link_libraries(conveyor_manipulation_planner ${catkin_LIBRARIES})
 target_link_libraries(conveyor_manipulation_planner ${orocos_kdl_LIBRARIES})

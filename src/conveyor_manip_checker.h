@@ -49,8 +49,8 @@ public:
         bool verbose = false) override;
 
     bool interpolatePath(
-        const smpl::RobotState& start,
-        const smpl::RobotState& finish,
+        const smpl::RobotState& start_positions,
+        const smpl::RobotState& finish_positions,
         std::vector<smpl::RobotState>& path) override;
 
     auto getCollisionModelVisualization(const smpl::RobotState& state)
@@ -78,9 +78,11 @@ public:
 
 private:
 
-    void updateGripperMeshesState(const smpl::RobotState& state);
+    void updateGripperMeshesState();
     void updateObjectSpheresState(const smpl::RobotState& state);
-    bool checkStateFCL(const smpl::RobotState& state);
+    bool checkStateFCL(
+        const smpl::RobotState& state,
+        const Eigen::Affine3d& pose_object);
 };
 
 bool Init(

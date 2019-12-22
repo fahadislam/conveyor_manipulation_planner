@@ -704,6 +704,7 @@ void AnimatePath(
             auto time = point_next.time_from_start - point.time_from_start;
             ros::Duration(time).sleep();
         }
+        // printf("time %f\n", point.time_from_start.toSec());
         pidx++;
         pidx %= traj->joint_trajectory.points.size();
         // getchar();
@@ -772,14 +773,17 @@ bool ExecutePickup(
     case ExecutionMode::SIMULATION:
     {
         AnimatePath(manip_cchecker, traj);
+        break;
     }
     case ExecutionMode::REAL_ROBOT_HARDCODED:
     {
         PickupObject(traj, intercept_time, start_state, gripper, arm);
+        break;
     }
     case ExecutionMode::REAL_ROBOT_PERCEPTION:
     {
         PickupObjectAtOffset(traj, time_offset, intercept_time, start_state, gripper, arm);
+        break;
     }
     }
 }
@@ -1130,13 +1134,17 @@ int main(int argc, char* argv[])
     grasps.push_back(grasp_transform);
     // TODO: pass all grasps
 
-    PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
-    // ExecutionMode execution_mode = ExecutionMode::SIMULATION;
-    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
+    // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
+    // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
+    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+
+    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
 
     bool ret;
     double intercept_time;
-    std::vector<double> object_state = {0.4, 1.3, 1.5}; // for hardcoded modes
+    // std::vector<double> object_state = {0.40, 1.30, 0.785}; // for hardcoded modes
+    std::vector<double> object_state = {0.40, 1.30, 0.0}; // for hardcoded modes
     double time_offset = planning_config.perception_time + planning_config.time_bound;
     moveit_msgs::RobotTrajectory traj;
 
@@ -1144,7 +1152,7 @@ int main(int argc, char* argv[])
     RobotArm arm;
     GripperMachine gripper;
 
-    if (execution_mode != ExecutionMode::SIMULATION) {
+    if (execution_mode != ExecutionMode::SIMULATION && planner_mode != PlannerMode::PREPROCESS) {
         arm.init();
         gripper.init();
     }
@@ -1199,7 +1207,11 @@ int main(int argc, char* argv[])
         }
         }
 
-        if (planner_mode != PlannerMode::PREPROCESS) {
+        if (planner_mode == PlannerMode::PREPROCESS) {
+            break;
+        }
+
+        if (ret) {
             ExecutePickup(
                 execution_mode,
                 time_offset,

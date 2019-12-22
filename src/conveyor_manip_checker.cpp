@@ -137,16 +137,18 @@ void ConveyorManipChecker::setObjectInitialPose(const Eigen::Affine3d& pose)
     object_init_pose = pose;
 }
 
-void ConveyorManipChecker::updateGripperMeshesState(const smpl::RobotState& state)
+void ConveyorManipChecker::updateGripperMeshesState()
 {
-    parent->updateState(state);
-    // open gripper
+    // open gripper in rcs
     parent->m_rcs->setJointVarPosition("r_gripper_r_finger_joint", 0.548);
     parent->m_rcs->setJointVarPosition("r_gripper_l_finger_joint", 0.548);
     parent->m_rcs->setJointVarPosition("r_gripper_r_finger_tip_joint", 0.548);
     parent->m_rcs->setJointVarPosition("r_gripper_l_finger_tip_joint", 0.548);
 
-    parent->m_rcs->updateLinkTransforms();
+    parent->m_rcs->updateLinkTransform("r_gripper_r_finger_link");
+    parent->m_rcs->updateLinkTransform("r_gripper_l_finger_link");
+    parent->m_rcs->updateLinkTransform("r_gripper_r_finger_tip_link");
+    parent->m_rcs->updateLinkTransform("r_gripper_l_finger_tip_link");
 
     for (auto lidx = 0; lidx < link_collision_models.size(); ++lidx) {
         auto* model = &link_collision_models[lidx];
@@ -156,6 +158,8 @@ void ConveyorManipChecker::updateGripperMeshesState(const smpl::RobotState& stat
             transformEigenToFCL(link_pose, T);
             object.collision_object->setTransform(T);
             object.collision_object->computeAABB();
+
+            // for vis
             link_to_pose_map[object.link_name] = link_pose;
         }
     }
@@ -163,7 +167,7 @@ void ConveyorManipChecker::updateGripperMeshesState(const smpl::RobotState& stat
 
 void ConveyorManipChecker::updateObjectSpheresState(const smpl::RobotState& state)
 {
-    // open gripper
+    // open gripper in cc
     parent->setJointPosition("r_gripper_r_finger_joint", 0.548);
     parent->setJointPosition("r_gripper_l_finger_joint", 0.548);
     parent->setJointPosition("r_gripper_r_finger_tip_joint", 0.548);
@@ -184,9 +188,21 @@ void ConveyorManipChecker::updateObjectSpheresState(const smpl::RobotState& stat
     parent->setJointPosition("conveyor_object_joint/rot_w", q.w());
 }
 
-bool ConveyorManipChecker::checkStateFCL(const smpl::RobotState& state)
+bool ConveyorManipChecker::checkStateFCL(
+    const smpl::RobotState& state,
+    const Eigen::Affine3d& pose_object)
 {
-    updateGripperMeshesState(state);
+    // update fcl object pose
+    fcl::Transform3f T;
+    transformEigenToFCL(pose_object, T);
+    obj_conveyor->setTransform(T);
+    obj_conveyor->computeAABB();
+
+    // Comment: this function updates the robot spheres state:
+    auto ma_collision_model = parent->getCollisionModelVisualization(state);
+
+    updateGripperMeshesState();
+
     for (auto lidx = 0; lidx < link_collision_models.size(); ++lidx) {
         auto* model = &link_collision_models[lidx];
         for (auto& lo : model->models) {
@@ -206,7 +222,6 @@ bool ConveyorManipChecker::checkStateFCL(const smpl::RobotState& state)
             }
         }
     }
-
     return true;
 }
 
@@ -233,25 +248,18 @@ bool ConveyorManipChecker::isStateValid(
     smpl::RobotState state_positions(state.size() - 1);
     std::copy(state.begin(), state.begin() + state.size() - 1, state_positions.begin());
     
-    // regular check without collision object
-    parent->setJointPosition("conveyor_object_joint/trans_z", 2.0);    //hack: throw in the sky
-    // SV_SHOW_INFO(parent->getCollisionWorldVisualization());
-    if (!parent->isStateValid(state_positions)) {  // updates spheres
-        return false;
-    }
+    Eigen::Affine3d pose_object;
 
-    Eigen::Affine3d pose;
-
-    pose = object_init_pose;
-    pose.translation().x() += object_velocity[0] * state.back();
-    pose.translation().y() += object_velocity[1] * state.back();
-    pose.translation().z() += object_velocity[2] * state.back();
+    pose_object = object_init_pose;
+    pose_object.translation().x() += object_velocity[0] * state.back();
+    pose_object.translation().y() += object_velocity[1] * state.back();
+    pose_object.translation().z() += object_velocity[2] * state.back();
 
     auto pose_robot = m_fk_iface->computeFK(state_positions);
     double intercept_dist = EuclideanDistance(
-                                pose.translation()[0],
-                                pose.translation()[1],
-                                pose.translation()[2],
+                                pose_object.translation()[0],
+                                pose_object.translation()[1],
+                                pose_object.translation()[2],
                                 pose_robot.translation()[0],
                                 pose_robot.translation()[1],
                                 pose_robot.translation()[2]);
@@ -259,18 +267,11 @@ bool ConveyorManipChecker::isStateValid(
     if (!intercept_dist > dist_thresh_fcl) {
         updateObjectSpheresState(state);
         if (!parent->isStateValid(state_positions)) {
-            // printf("aaaaaaaaa\n");
             return false;
         }
     }
     else {
-        fcl::Transform3f T;
-        transformEigenToFCL(pose, T);
-        obj_conveyor->setTransform(T);
-        obj_conveyor->computeAABB();
-
-        if (!checkStateFCL(state_positions)) {
-            // printf("cccccccccc\n");
+        if (!checkStateFCL(state_positions, pose_object)) {
             return false;
         }
     }
@@ -278,6 +279,70 @@ bool ConveyorManipChecker::isStateValid(
     return true;
 }
 
+#if 1
+bool ConveyorManipChecker::isStateToStateValid(
+    const smpl::RobotState& start,
+    const smpl::RobotState& finish,
+    bool verbose)
+{
+    // Three step collision checking:
+    // 1. Do a regular collision check of the edge from start to finish
+    // 2. If away from goal then do crude check of start and finish states only
+    // 3. If close to goal then do fine check of start and finish states only
+
+    smpl::RobotState start_positions(start.size() - 1);
+    std::copy(start.begin(), start.begin() + start.size() - 1, start_positions.begin());
+
+    smpl::RobotState finish_positions(finish.size() - 1);
+    std::copy(finish.begin(), finish.begin() + finish.size() - 1, finish_positions.begin());
+
+    // Interpolate path
+    std::vector<smpl::RobotState> path;
+    interpolatePath(start_positions, finish_positions, path);
+
+    double time_inc = (finish.back() - start.back()) / (path.size() - 1);
+    double state_time = start.back();
+    
+    for (size_t i = 0; i < path.size(); ++i) {
+
+        auto state_full = path[i];
+        state_full.push_back(state_time);
+
+        Eigen::Affine3d pose_object;
+
+        pose_object = object_init_pose;
+        pose_object.translation().x() += object_velocity[0] * state_time;
+        pose_object.translation().y() += object_velocity[1] * state_time;
+        pose_object.translation().z() += object_velocity[2] * state_time;
+
+        auto pose_robot = m_fk_iface->computeFK(path[i]);
+        double intercept_dist = EuclideanDistance(
+                                    pose_object.translation()[0],
+                                    pose_object.translation()[1],
+                                    pose_object.translation()[2],
+                                    pose_robot.translation()[0],
+                                    pose_robot.translation()[1],
+                                    pose_robot.translation()[2]);
+
+        if (intercept_dist > dist_thresh_fcl) {
+            updateObjectSpheresState(state_full);
+            // Comment: updateState is called in isStateValid
+            if (!parent->isStateValid(path[i])) {
+                return false;
+            }
+        }
+        else {
+            if (!checkStateFCL(path[i], pose_object)) {
+                return false;
+            }
+        }
+        state_time += time_inc;
+    }
+
+    return true;
+}
+
+#else
 bool ConveyorManipChecker::isStateToStateValid(
     const smpl::RobotState& start,
     const smpl::RobotState& finish,
@@ -302,170 +367,63 @@ bool ConveyorManipChecker::isStateToStateValid(
         return false;
     }
 
+    Eigen::Affine3d pose_start, pose_finish;
 
-    // Interpolate path
-    std::vector<smpl::RobotState> path;
-    interpolatePath(start_positions, finish_positions, path);
+    pose_start = object_init_pose;
+    pose_start.translation().x() += object_velocity[0] * start.back();
+    pose_start.translation().y() += object_velocity[1] * start.back();
+    pose_start.translation().z() += object_velocity[2] * start.back();
 
-    double time_inc = (finish.back() - start.back()) / (path.size() - 1);
-    double state_time = start.back();
+    pose_finish = object_init_pose;
+    pose_finish.translation().x() += object_velocity[0] * finish.back();
+    pose_finish.translation().y() += object_velocity[1] * finish.back();
+    pose_finish.translation().z() += object_velocity[2] * finish.back();
 
-    // printf("path size: %zu start: %f end: %f\n", path.size(), start.back(), finish.back());
-    for (size_t i = 0; i < path.size(); ++i) {
+    auto pose_robot = m_fk_iface->computeFK(finish_positions);
+    double intercept_dist = EuclideanDistance(
+                                pose_finish.translation()[0],
+                                pose_finish.translation()[1],
+                                pose_finish.translation()[2],
+                                pose_robot.translation()[0],
+                                pose_robot.translation()[1],
+                                pose_robot.translation()[2]);
 
-        auto state_positions = path[i];
-        auto state_full = start_positions;
-        state_full.push_back(state_time);
-
-        parent->updateState(state_positions);
-
-
-        // if (path.size() == 11) {
-        //     auto vis_name = "collision_state";
-        //     SV_SHOW_INFO_NAMED(vis_name, getCollisionModelVisualization(state_full));
-        //     printf("state time %f\n", state_time);
-        //     // getchar();
-        // }
-        // ros::Duration(0.01).sleep();
-
-        Eigen::Affine3d pose;
-
-        pose = object_init_pose;
-        pose.translation().x() += object_velocity[0] * state_time;
-        pose.translation().y() += object_velocity[1] * state_time;
-        pose.translation().z() += object_velocity[2] * state_time;
-
-        auto pose_robot = m_fk_iface->computeFK(path[i]);
-        double intercept_dist = EuclideanDistance(
-                                    pose.translation()[0],
-                                    pose.translation()[1],
-                                    pose.translation()[2],
-                                    pose_robot.translation()[0],
-                                    pose_robot.translation()[1],
-                                    pose_robot.translation()[2]);
-
-        if (!intercept_dist > dist_thresh_fcl) {
-            updateObjectSpheresState(state_full);
-            if (!parent->isStateValid(path[i])) {
-                // printf("aaaaaaaaa\n");
-                return false;
-            }
+    if (intercept_dist > dist_thresh_fcl) {
+        // start check
+        updateObjectSpheresState(start);
+        if (!parent->isStateValid(start_positions)) {
+            // printf("aaaaaaaaa\n");
+            return false;
         }
-        else {
-            fcl::Transform3f T;
-            transformEigenToFCL(pose, T);
-            obj_conveyor->setTransform(T);
-            obj_conveyor->computeAABB();
 
-            if (!checkStateFCL(state_positions)) {
-                // printf("cccccccccc\n");
-                return false;
-            }
+        // finish check
+        updateObjectSpheresState(finish);
+        if (!parent->isStateValid(finish_positions)) {
+            // printf("bbbbbbbbbbbbbb\n");
+            return false;
         }
-        state_time += time_inc;
-        // getchar();
     }
-    // printf("no collision\n");
+    else {
+        if (!checkStateFCL(start_positions, pose_start)) {
+            // printf("cccccccccc\n");
+            return false;
+        }
 
+        if (!checkStateFCL(finish_positions, pose_finish)) {
+            // printf("dddddddddddd\n");
+            return false;
+        }
+    }
 
     return true;
 }
-
-// bool ConveyorManipChecker::isStateToStateValid(
-//     const smpl::RobotState& start,
-//     const smpl::RobotState& finish,
-//     bool verbose)
-// {
-//     // Three step collision checking:
-//     // 1. Do a regular collision check of the edge from start to finish
-//     // 2. If away from goal then do crude check of start and finish states only
-//     // 3. If close to goal then do fine check of start and finish states only
-
-//     smpl::RobotState start_positions(start.size() - 1);
-//     std::copy(start.begin(), start.begin() + start.size() - 1, start_positions.begin());
-
-//     smpl::RobotState finish_positions(finish.size() - 1);
-//     std::copy(finish.begin(), finish.begin() + finish.size() - 1, finish_positions.begin());
-    
-//     // regular check without collision object
-//     parent->setJointPosition("conveyor_object_joint/trans_z", 2.0);    //hack: throw in the sky
-//     // SV_SHOW_INFO(parent->getCollisionWorldVisualization());
-//     if (!parent->isStateToStateValid(start_positions, finish_positions)) {  // updates spheres
-//         // printf("00000000000\n");
-//         return false;
-//     }
-
-//     Eigen::Affine3d pose_start, pose_finish;
-
-//     pose_start = object_init_pose;
-//     pose_start.translation().x() += object_velocity[0] * start.back();
-//     pose_start.translation().y() += object_velocity[1] * start.back();
-//     pose_start.translation().z() += object_velocity[2] * start.back();
-
-//     pose_finish = object_init_pose;
-//     pose_finish.translation().x() += object_velocity[0] * finish.back();
-//     pose_finish.translation().y() += object_velocity[1] * finish.back();
-//     pose_finish.translation().z() += object_velocity[2] * finish.back();
-
-//     auto pose_robot = m_fk_iface->computeFK(finish_positions);
-//     double intercept_dist = EuclideanDistance(
-//                                 pose_finish.translation()[0],
-//                                 pose_finish.translation()[1],
-//                                 pose_finish.translation()[2],
-//                                 pose_robot.translation()[0],
-//                                 pose_robot.translation()[1],
-//                                 pose_robot.translation()[2]);
-
-//     if (intercept_dist > dist_thresh_fcl) {
-//         // start check
-//         updateObjectSpheresState(start);
-//         if (!parent->isStateValid(start_positions)) {
-//             // printf("aaaaaaaaa\n");
-//             return false;
-//         }
-
-//         // finish check
-//         updateObjectSpheresState(finish);
-//         if (!parent->isStateValid(finish_positions)) {
-//             // printf("bbbbbbbbbbbbbb\n");
-//             return false;
-//         }
-//     }
-//     else {
-
-//         fcl::Transform3f T;
-//         transformEigenToFCL(pose_start, T);
-//         obj_conveyor->setTransform(T);
-//         obj_conveyor->computeAABB();
-
-//         if (!checkStateFCL()) {
-//             // printf("cccccccccc\n");
-//             return false;
-//         }
-
-//         transformEigenToFCL(pose_finish, T);
-//         obj_conveyor->setTransform(T);
-//         obj_conveyor->computeAABB();
-//         if (!checkStateFCL()) {
-//             // printf("dddddddddddd\n");
-//             return false;
-//         }
-//     }
-
-//     return true;
-// }
+#endif
 
 bool ConveyorManipChecker::interpolatePath(
-    const smpl::RobotState& start,
-    const smpl::RobotState& finish,
+    const smpl::RobotState& start_positions,
+    const smpl::RobotState& finish_positions,
     std::vector<smpl::RobotState>& path)
 {
-    smpl::RobotState start_positions(start.size() - 1);
-    std::copy(start.begin(), start.begin() + start.size() - 1, start_positions.begin());
-
-    smpl::RobotState finish_positions(finish.size() - 1);
-    std::copy(finish.begin(), finish.begin() + finish.size() - 1, finish_positions.begin());
-
     if (!parent->interpolatePath(start_positions, finish_positions, path)) {
         return false;
     }
@@ -476,6 +434,7 @@ bool ConveyorManipChecker::interpolatePath(
 auto ConveyorManipChecker::getCollisionModelVisualization(const smpl::RobotState& state)
     -> std::vector<smpl::visual::Marker>
 {
+    std::vector<smpl::visual::Marker> mm;
     updateObjectSpheresState(state);
 
     // Spheres model
@@ -483,7 +442,7 @@ auto ConveyorManipChecker::getCollisionModelVisualization(const smpl::RobotState
     std::copy(state.begin(), state.begin() + state.size() - 1, state_positions.begin());
     auto ma_collision_model = parent->getCollisionModelVisualization(state_positions);  // updates spheres
 
-    updateGripperMeshesState(state_positions);
+    updateGripperMeshesState();
 
     // Gripper mesh markers
     visualization_msgs::MarkerArray ma;
