@@ -117,7 +117,7 @@ bool MakeConveyorManipLatticeEGraph(
     // Parameters //
     ////////////////
 
-    std::vector<double> resolutions(robot->jointVariableCount());
+    std::vector<double> resolutions(robot->jointVariableCount() + 1);
 
     std::string disc_string;
     if (!params->getParam("discretization", disc_string)) {
@@ -136,6 +136,14 @@ bool MakeConveyorManipLatticeEGraph(
         }
         resolutions[vidx] = dit->second;
     }
+
+    // time dimension
+    auto dit = disc.find("time");
+    if (dit == end(disc)) {
+        SMPL_ERROR_NAMED(CP_LOGGER, "Discretization for variable 'time' not found in planning parameters");
+        return false;
+    }
+    resolutions[robot->jointVariableCount()] = dit->second;
 
     ConveyorManipLatticeActionSpaceParams action_params;
     if (!GetConveyorManipLatticeActionSpaceParams(action_params, *params)) {
@@ -648,6 +656,7 @@ bool Init(
 static
 bool IsPathValid(smpl::CollisionChecker* checker, const std::vector<smpl::RobotState>& path)
 {
+
     for (size_t i = 1; i < path.size(); ++i) {
         if (!checker->isStateToStateValid(path[i - 1], path[i])) {
             SMPL_ERROR_STREAM("path between " << path[i - 1] << " and " << path[i] << " is invalid (" << i - 1 << " -> " << i << ")");
@@ -875,6 +884,8 @@ bool PlanRobotPath(
     std::vector<int> solution_state_ids;
     
     int sol_cost;
+    planner->egraph_planner->m_allowed_expansions = allowed_time * 250;
+    SMPL_INFO("Expansions bound: %d\n", planner->egraph_planner->m_allowed_expansions);
     b_ret = planner->egraph_planner->replan(allowed_time, &solution_state_ids, &sol_cost);
 
     // if a path is returned, then pack it into msg form
@@ -906,7 +917,7 @@ bool PlanRobotPath(
 
     if (!IsPathValid(planner->manip_checker, to_check_path)) {
     	SMPL_ERROR("Path is Invalid");
-    	return false;
+    	return getchar();
     }
 
     ////////////////////
@@ -920,7 +931,7 @@ bool PlanRobotPath(
     /////////////////////////////////////////////////////////
 
     const double delta_time = 0.2;
-    path = MakeInterpolatedTrajectory(path, delta_time);
+    // path = MakeInterpolatedTrajectory(path, delta_time);
 
     // fit spline again
     printf("Size of interpolated path: %zu\n", path.size());
@@ -986,6 +997,9 @@ bool PreprocessConveyorPlanner(
 {
 	double allowed_time_scratch = 20;
 
+	// remove all stored data
+	auto sys_ret = system("exec rm -r /home/fislam/paths/*");
+
     /////////////////////////////////////////////
     //                 MAIN LOOP               //
     /////////////////////////////////////////////
@@ -1015,7 +1029,7 @@ bool PreprocessConveyorPlanner(
 
 		printf("\n");
 		SMPL_INFO("*******************************************************************");
-	    SMPL_INFO("********   Object State: %.2f %.2f %.2f \t id: %d   ********",
+	    SMPL_INFO("********   Object State: %f %f %f \t id: %d   ********",
 	    					center_state[0], center_state[1], center_state[2], state_id);
 	    SMPL_INFO("*******************************************************************");
 
@@ -1036,10 +1050,11 @@ bool PreprocessConveyorPlanner(
 	    double intercept_time;
 	    if (!PlanRobotPath(planner, start_state, goal_pose, allowed_time_scratch, &traj, intercept_time)) {
         	SMPL_INFO("Unable to plan to the center within time %f",
-        		allowed_time_scratch);
+        		allowed_time_scratch);planner->hkey_dijkstra.removeStateFromUncovered(state_id, true);
 
         	// order of these two operations matter!
         	planner->hkey_dijkstra.markDirtyState(state_id);
+        	// planner->hkey_dijkstra.removeStateFromUncovered(state_id, true);
         	continue;
 	    }
 
@@ -1052,7 +1067,6 @@ bool PreprocessConveyorPlanner(
 
 	    // remove previous path and write new path to file
 	    auto egraph_dir = "/home/fislam/paths/" + std::to_string(center_count);
-    	// auto sys_ret = system("exec rm -r /home/fislam/paths/*");
     	auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
 	    WritePath(planner->robot_model, start_state, traj, egraph_dir, intercept_time);
 
@@ -1083,7 +1097,7 @@ bool PreprocessConveyorPlanner(
 			auto object_state = planner->object_graph.extractState(state_id);
 
 			SMPL_INFO("		*********************************************************");
-		    SMPL_INFO("		********   Next State: %.2f %.2f %.2f \t id: %d   ********",
+		    SMPL_INFO("		********   Next State: %f %f %f \t id: %d   ********",
 		    					object_state[0], object_state[1], object_state[2], state_id);
 		    SMPL_INFO("		*********************************************************");
 
@@ -1104,13 +1118,19 @@ bool PreprocessConveyorPlanner(
 	        	SMPL_INFO("-----------------------------------------------------------\n\n\n");
 	        	if (iter == 0) {
 	        		planner->hkey_dijkstra.markDirtyState(state_id);
+	        		planner->hkey_dijkstra.removeStateFromUncovered(state_id, true);
 	        	}
 	        	// getchar();
 	        }
 	        else {
-	        	planner->hkey_dijkstra.removeStateFromUncovered(state_id);
+	        	if (state_id == 8382) {
+	        		printf("GOT 8382\n");
+	        		getchar();
+	        	}
+	        	planner->hkey_dijkstra.removeStateFromUncovered(state_id, false);
+	        	printf("setting path id %d\n", center_count);
 	        	planner->object_graph.setPathId(state_id, center_count);
-	            SMPL_INFO("		Pose is reachable");
+	            SMPL_INFO("		Pose is reachable, path id: %d", center_count);
 	            SMPL_INFO("-----------------------------------------------------------\n\n\n");
 	        	covered_count++;
 	        }
@@ -1138,19 +1158,18 @@ bool QueryConstTimePlanner(
     moveit_msgs::RobotTrajectory* trajectory,
     double& intercept_time)
 {
-	int path_id = planner->object_graph.getPathId(object_state);
-
 	auto object_state_grid = planner->object_graph.getDiscreteCenter(object_state);
 
-	SMPL_INFO("#######    Query object state: %.2f %.2f %.2f    #######", 
-			object_state_grid[0], object_state_grid[1], object_state_grid[2]);
+	int path_id = planner->object_graph.getPathId(object_state_grid);
+	path_id = 1;
+
+	SMPL_INFO("#######    Query object state: %f %f %f    Path id: %d    #######", 
+			object_state_grid[0], object_state_grid[1], object_state_grid[2], path_id);
 
 	if (path_id == -1) {
 		SMPL_ERROR("Query state is dirty or not covered");
 		return false;
 	}
-
-	printf("Path id is %d\n", path_id);
 
     //////////////////////////////////////////////////////
     // Compute path to object goal and store experience //
@@ -1174,7 +1193,7 @@ bool QueryConstTimePlanner(
     	return false;
 	}
 
-    if (!PlanRobotPath(planner, start_state, goal_pose, 1000.0, trajectory, intercept_time)) {
+    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, trajectory, intercept_time)) {
 		SMPL_INFO("Unable to plan to the center within time %f",
 		planner->time_bound);
 		return false;
@@ -1228,3 +1247,73 @@ bool QueryNormalPlanner(
 	return true;
 }
 
+bool QueryAllTestsPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height)
+{
+	auto state_id = planner->hkey_dijkstra.sampleObjectState();
+	if (state_id == -1) {
+		return false;
+	}
+
+	auto center_state = planner->object_graph.extractState(state_id);
+
+	ReinitDijkstras(planner, center_state);
+	int dirty = 0;
+	while (true) {
+		auto state_id = planner->hkey_dijkstra.getNextStateId();
+		if (state_id == -1) {	// OPEN empty or all states covered
+			SMPL_INFO("All object states tested successfully");
+			printf("NO. of dirty states %d\n", dirty);
+			return true;
+		}
+		auto object_state = planner->object_graph.extractState(state_id);
+
+		int path_id = planner->object_graph.getPathId(object_state);
+
+		SMPL_INFO("#######    Query object state: %f %f %f    id: %d    #######", 
+				object_state[0], object_state[1], object_state[2], state_id);
+
+		if (path_id == -1) {
+			SMPL_ERROR("Query state is dirty or not covered");
+			dirty++;
+			continue;
+		}
+
+		printf("Path id is %d\n", path_id);
+
+	    //////////////////////////////////////////////////////
+	    // Compute path to object goal and store experience //
+	    //////////////////////////////////////////////////////
+
+	    auto goal_pose = ComputeGoalPose(object_state, grasps[0], height);
+
+	    // update collision checker for the new object pose
+	    planner->manip_checker->setObjectInitialPose(goal_pose);
+
+	    // clear all memory
+	    planner->manip_graph.eraseExperienceGraph();
+	    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+
+		// load experience graph
+	    auto egraph_dir = "/home/fislam/paths/" + std::to_string(path_id);
+
+	    planner->manip_graph.loadExperienceGraph(egraph_dir);
+	    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+	    	SMPL_ERROR("Failed to initialize Generic Egraph heuristic");
+	    	return false;
+		}
+
+		moveit_msgs::RobotTrajectory trajectory;
+	    double intercept_time;
+	    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, &trajectory, intercept_time)) {
+			SMPL_INFO("Unable to plan to the center within time %f",
+			planner->time_bound);
+			getchar();
+		}
+	}
+
+	return true;
+}

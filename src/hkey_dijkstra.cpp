@@ -520,7 +520,7 @@ int HKeyDijkstra::sampleObjectState()
     SMPL_INFO("##############    Uncovered: %zu, Total: %zu, Dirty: %zu    #############",
             m_uc_states.size(), m_states.size(), m_dirty_states.size());
 
-    if (m_uc_states.size() == m_dirty_states.size()) {
+    if (m_uc_states.empty()) {
         SMPL_INFO("All non-dirty states covered, remaining dirty states %zu",
                     m_dirty_states.size());
         return -1;
@@ -554,7 +554,7 @@ int HKeyDijkstra::getNextStateId()
         return -1;
     }
 
-    if (m_uc_states.size() == m_dirty_states.size()) {
+    if (m_uc_states.empty()) {
         SMPL_INFO("No more uncovered states");
         return -1;
     }
@@ -583,7 +583,7 @@ int HKeyDijkstra::getNextStateId()
     return min_state->state_id;
 }
 
-void HKeyDijkstra::removeStateFromUncovered(int state_id)
+void HKeyDijkstra::removeStateFromUncovered(int state_id, bool dirty)
 {
     // 1. removes state from uncovered list
     // 2. if state is dirty, remove state from dirty list
@@ -594,12 +594,15 @@ void HKeyDijkstra::removeStateFromUncovered(int state_id)
     state->covered = true;
     m_uc_states.erase(it);
     SMPL_INFO("Covered %d \n", state_id);
-    if (state->dirty) {
-        SMPL_INFO("Removing state %d from dirty list", state_id);
-        state->dirty = false;
-        auto it = std::find(m_dirty_states.begin(), m_dirty_states.end(), state_id);
-        assert(it != m_dirty_states.end());
-        m_dirty_states.erase(it);
+
+    if (!dirty) {
+        if (state->dirty) {
+            SMPL_INFO("Removing state %d from dirty list", state_id);
+            state->dirty = false;
+            auto it = std::find(m_dirty_states.begin(), m_dirty_states.end(), state_id);
+            assert(it != m_dirty_states.end());
+            m_dirty_states.erase(it);
+        }
     }
     return;
 }

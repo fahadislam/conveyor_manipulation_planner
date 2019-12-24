@@ -82,7 +82,7 @@ bool ConveyorManipLattice::init(
         return false;
     }
 
-    if (resolutions.size() != _robot->jointVariableCount()) {
+    if (resolutions.size() != _robot->jointVariableCount() + 1) {
         SMPL_ERROR_NAMED(G_LOG, "Insufficient variable resolutions for robot model");
         return false;
     }
@@ -94,10 +94,10 @@ bool ConveyorManipLattice::init(
 
     m_fk_iface = _robot->getExtension<ForwardKinematicsInterface>();
 
-    m_min_limits.resize(_robot->jointVariableCount());
-    m_max_limits.resize(_robot->jointVariableCount());
-    m_continuous.resize(_robot->jointVariableCount());
-    m_bounded.resize(_robot->jointVariableCount());
+    m_min_limits.resize(_robot->jointVariableCount() + 1);
+    m_max_limits.resize(_robot->jointVariableCount() + 1);
+    m_continuous.resize(_robot->jointVariableCount() + 1);
+    m_bounded.resize(_robot->jointVariableCount() + 1);
     for (int jidx = 0; jidx < _robot->jointVariableCount(); ++jidx) {
         m_min_limits[jidx] = _robot->minPosLimit(jidx);
         m_max_limits[jidx] = _robot->maxPosLimit(jidx);
@@ -111,14 +111,19 @@ bool ConveyorManipLattice::init(
             m_continuous[jidx] ? "true" : "false",
             m_bounded[jidx] ? "true" : "false");
     }
+    // time dimension
+    m_min_limits[_robot->jointVariableCount()] = 0.0;
+    m_max_limits[_robot->jointVariableCount()] = 50.0;
+    m_continuous[_robot->jointVariableCount()] = false;
+    m_bounded[_robot->jointVariableCount()] = true;
 
     m_goal_state_id = reserveHashEntry();
     SMPL_INFO_NAMED(G_LOG, "  goal state has state ID %d", m_goal_state_id);
     SMPL_DEBUG_NAMED(G_LOG, "  goal state has state ID %d", m_goal_state_id);
 
-    std::vector<int> discretization(_robot->jointVariableCount());
-    std::vector<double> deltas(_robot->jointVariableCount());
-    for (size_t vidx = 0; vidx < _robot->jointVariableCount(); ++vidx) {
+    std::vector<int> discretization(_robot->jointVariableCount() + 1);
+    std::vector<double> deltas(_robot->jointVariableCount() + 1);
+    for (size_t vidx = 0; vidx < _robot->jointVariableCount() + 1; ++vidx) {
         if (m_continuous[vidx]) {
             discretization[vidx] = (int)std::round((2.0 * M_PI) / resolutions[vidx]);
             deltas[vidx] = (2.0 * M_PI) / (double)discretization[vidx];
@@ -137,13 +142,6 @@ bool ConveyorManipLattice::init(
 
     m_coord_vals = std::move(discretization);
     m_coord_deltas = std::move(deltas);
-
-    // for time dimension
-    double max_time = 50.0;  // maximum execution time (secs)
-    double delta_time = 0.01;
-    int discretization_time = max_time / delta_time;
-    m_coord_vals.push_back(discretization_time);
-    m_coord_deltas.push_back(delta_time);
 
     m_actions = actions;
 
@@ -229,7 +227,7 @@ void ConveyorManipLattice::GetSuccs(
     SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
 
     auto* vis_name = "expansion";
-    SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
+    SV_SHOW_DEBUG_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
 
     int goal_succ_count = 0;
 
@@ -537,7 +535,7 @@ void ConveyorManipLattice::stateToCoord(
     assert((int)state.size() == robot()->jointVariableCount() + 1 &&
             (int)coord.size() == robot()->jointVariableCount() + 1);
 
-    for (size_t i = 0; i < state.size(); ++i) {
+    for (size_t i = 0; i < state.size() + 1; ++i) {
         if (m_continuous[i]) {
             auto pos_angle = normalize_angle_positive(state[i]);
 
@@ -896,7 +894,7 @@ bool ConveyorManipLattice::setStart(const RobotState& state)
     // get arm position in environment
     RobotCoord start_coord(state_full.size());
     stateToCoord(state_full, start_coord);
-    SMPL_DEBUG_STREAM_NAMED(G_LOG, "  coord: " << start_coord);
+    SMPL_INFO_STREAM_NAMED(G_LOG, "  start coord: " << start_coord);
 
     m_start_state_id = getOrCreateState(start_coord, state_full);
 

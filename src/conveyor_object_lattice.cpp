@@ -166,6 +166,9 @@ int ConveyorObjectLattice::getPathId(RobotState state)
     RobotCoord coord(robot()->jointVariableCount());
     stateToCoord(state, coord);
 
+    SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "        coord: " << coord);
+
+
     auto it = m_state_to_pid.find(coord);
     if (it != m_state_to_pid.end()) {
         return it->second;

@@ -138,7 +138,7 @@ public:
     int sampleObjectState();
     void markDirtyState(int state_id);
     int getNextStateId();
-    void removeStateFromUncovered(int state_id);
+    void removeStateFromUncovered(int state_id, bool dirty);
     bool reinit_search();
     int replan(
         const TimeParameters &params,

@@ -86,6 +86,7 @@ enum  PlannerMode
 {
     NORMAL_QUERY = 0,
     CONST_TIME_QUERY,
+    ALL_TESTS_QUERY,
     PREPROCESS
 };
 
@@ -699,15 +700,15 @@ void AnimatePath(
             m.ns = "path_animation";
         }
         SV_SHOW_INFO(markers);
-        if (pidx != traj->joint_trajectory.points.size() - 1) {
-            auto& point_next = traj->joint_trajectory.points[pidx + 1];
-            auto time = point_next.time_from_start - point.time_from_start;
-            ros::Duration(time).sleep();
-        }
-        // printf("time %f\n", point.time_from_start.toSec());
+        // if (pidx != traj->joint_trajectory.points.size() - 1) {
+        //     auto& point_next = traj->joint_trajectory.points[pidx + 1];
+        //     auto time = point_next.time_from_start - point.time_from_start;
+        //     ros::Duration(time).sleep();
+        // }
+        printf("time %f\n", point.time_from_start.toSec());
         pidx++;
         pidx %= traj->joint_trajectory.points.size();
-        // getchar();
+        getchar();
     }
 }
 
@@ -1134,17 +1135,18 @@ int main(int argc, char* argv[])
     grasps.push_back(grasp_transform);
     // TODO: pass all grasps
 
-    // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
+    PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
     ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
 
     bool ret;
     double intercept_time;
-    // std::vector<double> object_state = {0.40, 1.30, 0.785}; // for hardcoded modes
-    std::vector<double> object_state = {0.40, 1.30, 0.0}; // for hardcoded modes
+    // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
+    std::vector<double> object_state = {0.540000, 1.340000, 1.832596}; // INCONSISTENT GOAL
     double time_offset = planning_config.perception_time + planning_config.time_bound;
     moveit_msgs::RobotTrajectory traj;
 
@@ -1194,7 +1196,16 @@ int main(int argc, char* argv[])
         }
         case PlannerMode::PREPROCESS:
         {
-            PreprocessConveyorPlanner(
+            ret = PreprocessConveyorPlanner(
+                &conveyor_planner,
+                start_state,
+                grasps,
+                object_height);
+            break;
+        }
+        case PlannerMode::ALL_TESTS_QUERY:
+        {
+            ret = QueryAllTestsPlanner(
                 &conveyor_planner,
                 start_state,
                 grasps,
@@ -1207,10 +1218,11 @@ int main(int argc, char* argv[])
         }
         }
 
-        if (planner_mode == PlannerMode::PREPROCESS) {
+        if (planner_mode == PlannerMode::PREPROCESS ||
+            planner_mode == PlannerMode::ALL_TESTS_QUERY) {
             break;
         }
-
+        
         if (ret) {
             ExecutePickup(
                 execution_mode,
@@ -1221,6 +1233,9 @@ int main(int argc, char* argv[])
                 &traj,
                 &gripper,
                 &arm);
+        }
+        else {
+            break;
         }
     }
 

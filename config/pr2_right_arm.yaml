@@ -7,6 +7,7 @@ planning:
     r_forearm_roll_joint    0.017453292519943295
     r_wrist_flex_joint      0.017453292519943295
     r_wrist_roll_joint      0.017453292519943295
+    time                    0.01
   use_xyz_snap_mprim: false
   use_rpy_snap_mprim: false
   use_xyzrpy_snap_mprim: false

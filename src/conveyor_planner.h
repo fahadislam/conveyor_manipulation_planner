@@ -141,4 +141,10 @@ bool QueryNormalPlanner(
     moveit_msgs::RobotTrajectory* trajectory,
     double& intercept_time);
 
+bool QueryAllTestsPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height);
+
 #endif

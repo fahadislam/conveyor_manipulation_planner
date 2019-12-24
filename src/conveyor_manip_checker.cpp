@@ -328,11 +328,13 @@ bool ConveyorManipChecker::isStateToStateValid(
             updateObjectSpheresState(state_full);
             // Comment: updateState is called in isStateValid
             if (!parent->isStateValid(path[i])) {
+                // printf("aaaaaaaaaa\n");
                 return false;
             }
         }
         else {
             if (!checkStateFCL(path[i], pose_object)) {
+                // printf("bbbbbbbbbb\n");
                 return false;
             }
         }
