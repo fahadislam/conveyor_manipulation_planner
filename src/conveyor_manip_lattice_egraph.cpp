@@ -537,24 +537,6 @@ void ConveyorManipLatticeEgraph::eraseExperienceGraph()
     clearStates();
 }
 
-// void ConveyorManipLatticeEgraph::clearStates()
-// {
-//     std::vector<ConveyorManipLatticeState*> temp_states;
-//     for (auto s : m_states) {
-//         auto it = std::find(m_egraph_state_ids.begin(), m_egraph_state_ids.end(), getHashEntry(s->coord));
-//         if (it != m_egraph_state_ids.end()) {
-//             temp_states.push_back(s);
-//         }
-//         else {
-//             delete s;
-//         }
-//     }
-//     m_states.clear();
-//     m_states.shrink_to_fit();
-//     m_states = temp_states;
-//     m_goal_state_id = reserveHashEntry();
-// }
-
 bool ConveyorManipLatticeEgraph::checkExperienceGraphState(int state_id) const
 {
     auto it = std::find(m_egraph_state_ids.begin(), m_egraph_state_ids.end(), state_id);

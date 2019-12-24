@@ -1135,9 +1135,9 @@ int main(int argc, char* argv[])
     grasps.push_back(grasp_transform);
     // TODO: pass all grasps
 
-    PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
+    // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
     ExecutionMode execution_mode = ExecutionMode::SIMULATION;

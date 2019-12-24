@@ -1029,7 +1029,7 @@ bool PreprocessConveyorPlanner(
 
 		printf("\n");
 		SMPL_INFO("*******************************************************************");
-	    SMPL_INFO("********   Object State: %f %f %f \t id: %d   ********",
+	    SMPL_INFO("********   Object State: %.2f, %.2f, %f \t id: %d   ********",
 	    					center_state[0], center_state[1], center_state[2], state_id);
 	    SMPL_INFO("*******************************************************************");
 
@@ -1085,6 +1085,7 @@ bool PreprocessConveyorPlanner(
 		int covered_count = 0;
 		int iter = 0;
 	    while (true) {
+
 	    	// Get next object state"
 	    	// 	- For the first iteration it should be the center state
 	    	auto state_id = planner->hkey_dijkstra.getNextStateId();
@@ -1097,7 +1098,7 @@ bool PreprocessConveyorPlanner(
 			auto object_state = planner->object_graph.extractState(state_id);
 
 			SMPL_INFO("		*********************************************************");
-		    SMPL_INFO("		********   Next State: %f %f %f \t id: %d   ********",
+		    SMPL_INFO("		********   Next State: %.2f, %.2f, %f \t id: %d   ********",
 		    					object_state[0], object_state[1], object_state[2], state_id);
 		    SMPL_INFO("		*********************************************************");
 
@@ -1111,6 +1112,12 @@ bool PreprocessConveyorPlanner(
 		    // update collision checker for the new object pose
 		    planner->manip_checker->setObjectInitialPose(goal_pose);
 
+			// need to call init again because the heuristic needs the updated collision checker
+		    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+	        	SMPL_ERROR("Failed to initialize Generic Egraph heuristic");
+	        	return false;
+	    	}
+
 	        moveit_msgs::RobotTrajectory traj;
 	        double intercept_time;
 	        if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, &traj, intercept_time)) {
@@ -1123,10 +1130,6 @@ bool PreprocessConveyorPlanner(
 	        	// getchar();
 	        }
 	        else {
-	        	if (state_id == 8382) {
-	        		printf("GOT 8382\n");
-	        		getchar();
-	        	}
 	        	planner->hkey_dijkstra.removeStateFromUncovered(state_id, false);
 	        	printf("setting path id %d\n", center_count);
 	        	planner->object_graph.setPathId(state_id, center_count);
@@ -1135,6 +1138,7 @@ bool PreprocessConveyorPlanner(
 	        	covered_count++;
 	        }
 	        iter++;
+	        // getchar();
 
 	    }
 	    if (covered_count > 0) {
