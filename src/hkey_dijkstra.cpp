@@ -539,7 +539,9 @@ int HKeyDijkstra::sampleObjectState()
 
 void HKeyDijkstra::markDirtyState(int state_id)
 {
+    SMPL_INFO("Marking state %d as dirty", state_id);
     auto state = getSearchState(state_id);
+    assert(!state->dirty);
     state->dirty = true;
     m_dirty_states.push_back(state_id);
 }
@@ -575,36 +577,37 @@ int HKeyDijkstra::getNextStateId()
 
     ++m_expand_count;
 
-    if (min_state->covered) {
-        printf("State %d already covered, skipping!\n", min_state->state_id);
+    if (min_state->covered && !min_state->dirty) {
+        printf("State %d already covered and not dirty, skipping!\n", min_state->state_id);
         return -2;
     }
 
     return min_state->state_id;
 }
 
-void HKeyDijkstra::removeStateFromUncovered(int state_id, bool dirty)
+void HKeyDijkstra::removeStateFromUncoveredList(int state_id)
 {
-    // 1. removes state from uncovered list
-    // 2. if state is dirty, remove state from dirty list
+    SMPL_INFO("Removing state %d from UC list\n", state_id);
     auto it = std::find(m_uc_states.begin(), m_uc_states.end(), state_id);
     assert(it != m_uc_states.end());
 
     auto state = getSearchState(*it);
     state->covered = true;
     m_uc_states.erase(it);
-    SMPL_INFO("Covered %d \n", state_id);
 
-    if (!dirty) {
-        if (state->dirty) {
-            SMPL_INFO("Removing state %d from dirty list", state_id);
-            state->dirty = false;
-            auto it = std::find(m_dirty_states.begin(), m_dirty_states.end(), state_id);
-            assert(it != m_dirty_states.end());
-            m_dirty_states.erase(it);
-        }
-    }
     return;
+}
+
+void HKeyDijkstra::removeStateFromDirtyList(int state_id)
+{
+    auto state = getSearchState(state_id);
+    if (state->dirty) {
+        SMPL_INFO("Removing state %d from Dirty list\n", state_id);
+        state->dirty = false;
+        auto it = std::find(m_dirty_states.begin(), m_dirty_states.end(), state_id);
+        assert(it != m_dirty_states.end());
+        m_dirty_states.erase(it);
+    }
 }
 
 // Expand states to improve the current solution until a solution within the

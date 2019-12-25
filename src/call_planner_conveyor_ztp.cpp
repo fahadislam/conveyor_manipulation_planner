@@ -1137,8 +1137,8 @@ int main(int argc, char* argv[])
 
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    PlannerMode planner_mode = PlannerMode::PREPROCESS;
-    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
+    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
     ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
