@@ -43,27 +43,24 @@ add_library(
     src/conveyor_object_lattice.cpp
     #src/conveyor_planner_interface.cpp
     src/conveyor_planner.cpp
-    src/hkey_dijkstra.cpp
-    src/conversions.cpp
-    #src/profile.cpp
-    src/iterative_parabolic_time_parameterization.cpp)
+    src/hkey_dijkstra.cpp)
 target_link_libraries(conveyor_manipulation_planner ${catkin_LIBRARIES})
 target_link_libraries(conveyor_manipulation_planner ${orocos_kdl_LIBRARIES})
 target_link_libraries(conveyor_manipulation_planner smpl::smpl)
 target_link_libraries(conveyor_manipulation_planner fcl)
 target_link_libraries(conveyor_manipulation_planner ${Boost_LIBRARIES})
 
-add_executable(
-    callPlannerConveyor
-    src/call_planner_conveyor.cpp
-    src/collision_space_scene.cpp
-    src/conveyor_kdl_robot_model.cpp
-    src/conveyor_planner_interface.cpp)
-target_link_libraries(callPlannerConveyor ${catkin_LIBRARIES} smpl::smpl conveyor_manipulation_planner)
+#add_executable(
+#    callPlannerConveyor
+#    src/call_planner_conveyor.cpp
+#    src/collision_space_scene.cpp
+#    src/conveyor_kdl_robot_model.cpp
+#    src/conveyor_planner_interface.cpp)
+#target_link_libraries(callPlannerConveyor ${catkin_LIBRARIES} smpl::smpl conveyor_manipulation_planner)
 
-install(
-    TARGETS callPlannerConveyor
-    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+#install(
+#    TARGETS callPlannerConveyor
+#    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 add_executable(
     callPlannerConveyorZTP

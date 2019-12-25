@@ -587,14 +587,14 @@ int HKeyDijkstra::getNextStateId()
 
 void HKeyDijkstra::removeStateFromUncoveredList(int state_id)
 {
-    SMPL_INFO("Removing state %d from UC list\n", state_id);
-    auto it = std::find(m_uc_states.begin(), m_uc_states.end(), state_id);
-    assert(it != m_uc_states.end());
-
-    auto state = getSearchState(*it);
-    state->covered = true;
-    m_uc_states.erase(it);
-
+    auto state = getSearchState(state_id);
+    if (!state->covered) {
+        SMPL_INFO("Removing state %d from UC list\n", state_id);
+        auto it = std::find(m_uc_states.begin(), m_uc_states.end(), state_id);
+        assert(it != m_uc_states.end());
+        state->covered = true;
+        m_uc_states.erase(it);
+    }
     return;
 }
 
@@ -608,6 +608,7 @@ void HKeyDijkstra::removeStateFromDirtyList(int state_id)
         assert(it != m_dirty_states.end());
         m_dirty_states.erase(it);
     }
+    return;
 }
 
 // Expand states to improve the current solution until a solution within the

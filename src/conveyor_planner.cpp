@@ -33,7 +33,6 @@
 #include "conveyor_kdl_robot_model.h"
 #include "conveyor_manip_checker.h"
 #include "conveyor_object_model.h"
-#include "iterative_parabolic_time_parameterization.h"
 
 #include <boost/filesystem.hpp>
 #include <eigen_conversions/eigen_msg.h>
@@ -45,7 +44,7 @@
 #include <smpl/stl/memory.h>
 #include <smpl/time.h>
 
-#include "conversions.h"
+// #include "conversions.h"
 
 const char* CP_LOGGER = "conveyor";
 
@@ -303,6 +302,102 @@ void ConvertJointVariablePathToJointTrajectory(
 }
 
 static
+auto Sample(const std::vector<smpl::RobotState>& path, double t)
+    -> smpl::RobotState
+{
+    assert(path.size() > 1);
+    smpl::RobotState state(path[0].size());
+    int num_joints = state.size() - 1;
+    for (auto i = 1; i < path.size(); ++i) {
+        auto& curr = path[i - 1];
+        auto& next = path[i];
+
+        double e = 0.0001;
+        if (curr.back() - e <= t && t <= next.back() + e) {
+            // auto jtp = trajectory_msgs::JointTrajectoryPoint();
+
+            // jtp.positions.resize(curr.positions.size());
+
+            auto dt = next.back() - curr.back();
+            // auto dt = next.time_from_start.toSec() - curr.time_from_start.toSec();
+            assert(dt >= 0.0);
+            auto alpha = dt >= 1e-6 ? (t - curr.back()) / dt : 0.0;
+
+            // linearly interpolate single-dof joint positions
+            for (auto j = 0; j < num_joints; ++j) {
+                state[j] = curr[j] + alpha * smpl::shortest_angle_diff(next[j], curr[j]);
+            }
+
+            // interpolate timestamp
+            state.back() = curr.back() + ros::Duration(alpha * dt).toSec();
+            return state;
+        }
+    }
+
+    ROS_WARN("Trajectory segment not found");
+    return path.back();
+}
+
+static
+auto MakeInterpolatedTrajectory(
+    const std::vector<smpl::RobotState>& path,
+    double time_delta)
+    -> std::vector<smpl::RobotState>
+{
+    std::vector<smpl::RobotState> interp_path;
+    double duration = path.back().back() - path.front().back();
+    auto samples = std::max(2, (int)std::round(duration / time_delta) + 1);
+    for (auto i = 0; i < samples; ++i) {
+        auto t = duration * double(i) / double(samples - 1);
+        auto p = Sample(path, t);
+        interp_path.push_back(p);
+    }
+    return interp_path;
+}
+
+static
+void fit_cubic_spline(const int n, const double dt[], const double x[], double x1[], double x2[])
+{
+  int i;
+  const double x1_i = x1[0], x1_f = x1[n - 1];
+
+  // Tridiagonal alg - forward sweep
+  // x1 and x2 used to store the temporary coefficients c and d
+  // (will get overwritten during backsubstitution)
+  double *c = x1, *d = x2;
+  c[0] = 0.5;
+  d[0] = 3.0 * ((x[1] - x[0]) / dt[0] - x1_i) / dt[0];
+  for (i = 1; i <= n - 2; i++)
+  {
+    const double dt2 = dt[i - 1] + dt[i];
+    const double a = dt[i - 1] / dt2;
+    const double denom = 2.0 - a * c[i - 1];
+    c[i] = (1.0 - a) / denom;
+    d[i] = 6.0 * ((x[i + 1] - x[i]) / dt[i] - (x[i] - x[i - 1]) / dt[i - 1]) / dt2;
+    d[i] = (d[i] - a * d[i - 1]) / denom;
+    
+  }
+  const double denom = dt[n - 2] * (2.0 - c[n - 2]);
+  d[n - 1] = 6.0 * (x1_f - (x[n - 1] - x[n - 2]) / dt[n - 2]);
+  d[n - 1] = (d[n - 1] - dt[n - 2] * d[n - 2]) / denom;
+
+  // Tridiagonal alg - backsubstitution sweep
+  // 2nd derivative
+  x2[n - 1] = d[n - 1];
+  for (i = n - 2; i >= 0; i--) {
+    // printf("i %d d[i] %f c[i] %f x2[i + 1] %f : x2[i] %f\n", i, d[i], c[i], x2[i + 1], x2[i]);
+    x2[i] = d[i] - c[i] * x2[i + 1];
+}
+    // getchar();
+
+  // 1st derivative
+  x1[0] = x1_i;
+  for (i = 1; i < n - 1; i++)
+    x1[i] = (x[i + 1] - x[i]) / dt[i] - (2 * x2[i] + x2[i + 1]) * dt[i] / 6.0;
+  x1[n - 1] = x1_f;
+}
+
+static
 bool WritePath(
     smpl::RobotModel* robot,
     const moveit_msgs::RobotState& ref,
@@ -466,7 +561,7 @@ bool WritePath(
     return true;
 }
 
-
+static
 bool ReinitDijkstras(
 	ConveyorPlanner* planner,
 	const ObjectState& start_state)
@@ -666,6 +761,7 @@ bool IsPathValid(smpl::CollisionChecker* checker, const std::vector<smpl::RobotS
     return true;
 }
 
+static
 void ShortcutPath(
 	ConveyorPlanner* planner,
 	double intercept_time,
@@ -738,6 +834,7 @@ void ShortcutPath(
     // }
 }
 
+static
 bool InterpolatePath(smpl::CollisionChecker* cc, std::vector<smpl::RobotState>& path)
 {
     if (path.empty()) {
@@ -800,6 +897,7 @@ bool InterpolatePath(smpl::CollisionChecker* cc, std::vector<smpl::RobotState>& 
     return true;
 }
 
+static
 bool PlanRobotPath(
 	ConveyorPlanner* planner,
 	const moveit_msgs::RobotState& start_state,
@@ -932,7 +1030,7 @@ bool PlanRobotPath(
 	    // Profile/Interpolate path and convert to trajectory  //
 	    /////////////////////////////////////////////////////////
 
-	    const double delta_time = 0.2;
+	    // const double delta_time = 0.2;
 	    // path = MakeInterpolatedTrajectory(path, delta_time);
 
 	    // fit spline again
@@ -956,7 +1054,7 @@ bool PlanRobotPath(
 
 	    for (size_t i = 0; i < num_joints; ++i) {
 	        joint_trajs[i].velocities[0] = 0.0; joint_trajs[i].velocities.back() = 0.0;
-	        genx::fit_cubic_spline(
+	        fit_cubic_spline(
 	                path.size(),
 	                &time_diff[0],
 	                &joint_trajs[i].positions[0],
@@ -975,6 +1073,7 @@ bool PlanRobotPath(
     return b_ret;
 }
 
+static
 auto ComputeGoalPose(
 	const ObjectState& object_state,
 	const Eigen::Affine3d& grasp,
