@@ -1012,14 +1012,6 @@ bool PlanRobotPath(
 	    intercept_time = planner->manip_graph.getInterceptTime(path);
 	    std::vector<SingleJointTrajectory> joint_trajs;
 
-	    auto to_check_path = path;
-	    to_check_path.pop_back();
-
-	    if (!IsPathValid(planner->manip_checker, to_check_path)) {
-	    	SMPL_ERROR("Path is Invalid");
-	    	return getchar();
-	    }
-
 	    ////////////////////
 	    // Shortcut Path  //
 	    ////////////////////
@@ -1030,9 +1022,18 @@ bool PlanRobotPath(
 	    // Profile/Interpolate path and convert to trajectory  //
 	    /////////////////////////////////////////////////////////
 
-	    // const double delta_time = 0.2;
-	    // path = MakeInterpolatedTrajectory(path, delta_time);
+#if 0
+	    const double delta_time = 0.2;
+	    path = MakeInterpolatedTrajectory(path, delta_time);
 
+	    auto to_check_path = path;
+	    to_check_path.pop_back();
+
+	    if (!IsPathValid(planner->manip_checker, to_check_path)) {
+	    	SMPL_ERROR("Path is Invalid");
+	    	// return getchar();
+	    }
+#endif
 	    // fit spline again
 	    printf("Size of interpolated path: %zu\n", path.size());
 
@@ -1250,9 +1251,8 @@ bool QueryConstTimePlanner(
 	auto object_state_grid = planner->object_graph.getDiscreteCenter(object_state);
 
 	int path_id = planner->object_graph.getPathId(object_state_grid);
-	path_id = 1;
 
-	SMPL_INFO("#######    Query object state: %f %f %f    Path id: %d    #######", 
+	SMPL_INFO("#######    Query object state: %.2f, %.2f, %f    Path id: %d    #######", 
 			object_state_grid[0], object_state_grid[1], object_state_grid[2], path_id);
 
 	if (path_id == -1) {
@@ -1361,8 +1361,8 @@ bool QueryAllTestsPlanner(
 
 		int path_id = planner->object_graph.getPathId(object_state);
 
-		SMPL_INFO("#######    Query object state: %f %f %f    id: %d     Dirty count: %d   #######", 
-				object_state[0], object_state[1], object_state[2], state_id);
+		SMPL_INFO("#######    Query object state: %.2f, %.2f, %f    id: %d     Dirty count: %d   #######", 
+				object_state[0], object_state[1], object_state[2], state_id, dirty_count);
 
 		if (path_id == -1) {
 			SMPL_ERROR("Query state %d is dirty or not covered", state_id);

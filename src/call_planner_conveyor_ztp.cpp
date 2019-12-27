@@ -175,13 +175,6 @@ public:
     //! Sends the command to start a given trajectory
     void startTrajectory(control_msgs::FollowJointTrajectoryGoal goal, bool wait)
     {
-        traj_client_.reset(new FollowJointTrajectoryActionClient(
-            "r_arm_controller/follow_joint_trajectory"));
-
-        // wait for action server to come up
-        if(!traj_client_->waitForServer(ros::Duration(5.0))){
-            ROS_ERROR("joint_trajectory_action server not available");
-        }
         goal.trajectory.header.stamp = ros::Time::now();
 
         if (wait) {
@@ -674,13 +667,16 @@ bool GetNewObjectGoal(std::vector<double>& object_pose)
         object_pose[1] = pose_out.pose.position.y;
 
         Eigen::Quaterniond q;
-        q.x() = g_pose_msg.pose.orientation.x;
-        q.y() = g_pose_msg.pose.orientation.y;
-        q.z() = g_pose_msg.pose.orientation.z;
-        q.w() = g_pose_msg.pose.orientation.w;
+        q.x() = pose_out.pose.orientation.x;
+        q.y() = pose_out.pose.orientation.y;
+        q.z() = pose_out.pose.orientation.z;
+        q.w() = pose_out.pose.orientation.w;
         double pitch, roll;
         smpl::angles::get_euler_zyx(q, object_pose[2], pitch, roll);
+        // printf("r: %f, p: %f, y: %f\n", roll, pitch, object_pose[2]);
     }
+    SMPL_INFO("Object state [perceived]: %.2f %.2f %f",
+                object_pose[0], object_pose[1], object_pose[2]);
     return true;
 }
 
@@ -700,15 +696,15 @@ void AnimatePath(
             m.ns = "path_animation";
         }
         SV_SHOW_INFO(markers);
-        // if (pidx != traj->joint_trajectory.points.size() - 1) {
-        //     auto& point_next = traj->joint_trajectory.points[pidx + 1];
-        //     auto time = point_next.time_from_start - point.time_from_start;
-        //     ros::Duration(time).sleep();
-        // }
-        printf("time %f\n", point.time_from_start.toSec());
+        if (pidx != traj->joint_trajectory.points.size() - 1) {
+            auto& point_next = traj->joint_trajectory.points[pidx + 1];
+            auto time = point_next.time_from_start - point.time_from_start;
+            ros::Duration(time).sleep();
+        }
+        // printf("time %f\n", point.time_from_start.toSec());
+        // getchar();
         pidx++;
         pidx %= traj->joint_trajectory.points.size();
-        getchar();
     }
 }
 
@@ -1142,12 +1138,15 @@ int main(int argc, char* argv[])
 
     ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
+    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     bool ret;
     double intercept_time;
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
-    std::vector<double> object_state = {0.540000, 1.340000, 1.832596}; // INCONSISTENT GOAL
+    std::vector<double> object_state = {0.420000, 1.380000, 2.356194}; // INCONSISTENT GOAL
+    double planning_buffer = 0.1;
     double time_offset = planning_config.perception_time + planning_config.time_bound;
+    time_offset += planning_buffer;
     moveit_msgs::RobotTrajectory traj;
 
     // Init gripper and traj clients
@@ -1167,6 +1166,8 @@ int main(int argc, char* argv[])
             if (!GetNewObjectGoal(object_state)) {
                 ROS_ERROR("Failed to find object goal pose");
             }
+            // add offset to object state
+            object_state[1] += time_offset * object_velocity[1];
         }
 
         switch (planner_mode) {
@@ -1224,6 +1225,8 @@ int main(int argc, char* argv[])
         }
         
         if (ret) {
+            SMPL_INFO("Total trajectory time: %f, intercept time: %f",
+                    traj.joint_trajectory.points.back().time_from_start, intercept_time);
             ExecutePickup(
                 execution_mode,
                 time_offset,
@@ -1235,7 +1238,7 @@ int main(int argc, char* argv[])
                 &arm);
         }
         else {
-            break;
+            g_request_active = false;
         }
     }
 
