@@ -132,6 +132,16 @@ bool QueryConstTimePlanner(
     moveit_msgs::RobotTrajectory* trajectory,
     double& intercept_time);
 
+bool QueryConstTimeReplanner(
+	ConveyorPlanner* planner,
+	const moveit_msgs::RobotState& start_state,
+	const std::vector<Eigen::Affine3d>& grasps,
+	const ObjectState& old_object_state,
+    const ObjectState& new_object_state,
+    double height,
+    moveit_msgs::RobotTrajectory* trajectory,
+    double& intercept_time);
+
 bool QueryNormalPlanner(
 	ConveyorPlanner* planner,
 	const moveit_msgs::RobotState& start_state,

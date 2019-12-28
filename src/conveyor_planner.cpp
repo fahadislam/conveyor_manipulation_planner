@@ -946,20 +946,21 @@ bool PlanRobotPath(
     // Set Start  //
     ////////////////
 
-    smpl::RobotState initial_positions;
+    smpl::RobotState start;
     std::vector<std::string> missing;
     if (!leatherman::getJointPositions(
             start_state.joint_state,
             start_state.multi_dof_joint_state,
             planner->robot_model->getPlanningJoints(),
-            initial_positions,
+            start,
             missing))
     {	
     	SMPL_ERROR("Start state is missing planning joints");
     	return false;
     }
+    start.push_back(start_state.joint_state.position.back());	// time
 
-    if (!planner->manip_graph.setStart(initial_positions)) {
+    if (!planner->manip_graph.setStart(start)) {
         SMPL_ERROR("Failed to set start state");
         return false;
     }
@@ -1018,21 +1019,44 @@ bool PlanRobotPath(
 
 	    ShortcutPath(planner, intercept_time, path);
 
+	    // auto to_check_path = path;
+	    // to_check_path.pop_back();
+	    // if (!IsPathValid(planner->manip_checker, to_check_path)) {
+	    // 	SMPL_ERROR("Path is invalid before interp");
+	    // 	// return getchar();
+	    // }
+
 	    /////////////////////////////////////////////////////////
 	    // Profile/Interpolate path and convert to trajectory  //
 	    /////////////////////////////////////////////////////////
 
-#if 0
-	    const double delta_time = 0.2;
-	    path = MakeInterpolatedTrajectory(path, delta_time);
+#if 1
+	    // Only need to interpolate until the time when we stop replanning
+	    double last_replan_time = 5.0;
 
-	    auto to_check_path = path;
-	    to_check_path.pop_back();
-
-	    if (!IsPathValid(planner->manip_checker, to_check_path)) {
-	    	SMPL_ERROR("Path is Invalid");
-	    	// return getchar();
+	    // split path before and after last replan time
+	    std::vector<smpl::RobotState> prereplan, postreplan;
+	    for (const auto& wp : path) {
+	        if (wp.back() < last_replan_time) {
+	        	prereplan.push_back(wp);
+	        }
+	        else {
+	        	postreplan.push_back(wp);
+	        }
 	    }
+	    prereplan.push_back(postreplan.front());
+	    const double delta_time = 0.2;
+	    path = MakeInterpolatedTrajectory(prereplan, delta_time);
+	    for (size_t i = 1; i < postreplan.size(); ++i) {	// skip the first wp it's part of prereplan also
+	    	path.push_back(postreplan[i]);
+	    }
+		// to_check_path = path;
+	 //    to_check_path.pop_back();
+
+	 //    // if (!IsPathValid(planner->manip_checker, to_check_path)) {
+	 //    // 	SMPL_ERROR("Path is invalid after interp");
+	 //    // 	// return getchar();
+	 //    // }
 #endif
 	    // fit spline again
 	    printf("Size of interpolated path: %zu\n", path.size());
@@ -1158,9 +1182,6 @@ bool PreprocessConveyorPlanner(
         	continue;
 	    }
 
-	    SMPL_INFO("Total trajectory time %f, Intercept time: %f",
-	    	traj.joint_trajectory.points.back().time_from_start.toSec(), intercept_time);
-
 	    // remove previous path and write new path to file
 	    auto egraph_dir = "/home/fislam/paths/" + std::to_string(center_count);
     	auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
@@ -1260,10 +1281,6 @@ bool QueryConstTimePlanner(
 		return false;
 	}
 
-    //////////////////////////////////////////////////////
-    // Compute path to object goal and store experience //
-    //////////////////////////////////////////////////////
-
     auto goal_pose = ComputeGoalPose(object_state_grid, grasps[0], height);
 
     // update collision checker for the new object pose
@@ -1291,6 +1308,88 @@ bool QueryConstTimePlanner(
 	return true;
 }
 
+bool QueryConstTimeReplanner(
+	ConveyorPlanner* planner,
+	const moveit_msgs::RobotState& start_state,
+	const std::vector<Eigen::Affine3d>& grasps,
+	const ObjectState& old_object_state,
+    const ObjectState& new_object_state,
+    double height,
+    moveit_msgs::RobotTrajectory* trajectory,
+    double& intercept_time)
+{
+	auto old_object_state_grid = planner->object_graph.getDiscreteCenter(old_object_state);
+	auto new_object_state_grid = planner->object_graph.getDiscreteCenter(new_object_state);
+
+	int old_path_id = planner->object_graph.getPathId(old_object_state_grid);
+	int new_path_id = planner->object_graph.getPathId(new_object_state_grid);
+
+	SMPL_INFO("#######    Old object state: %.2f, %.2f, %f    Path id: %d    #######", 
+			old_object_state_grid[0], old_object_state_grid[1], old_object_state_grid[2], old_path_id);
+	SMPL_INFO("#######    New object state: %.2f, %.2f, %f    Path id: %d    #######", 
+			new_object_state_grid[0], new_object_state_grid[1], new_object_state_grid[2], new_path_id);
+
+	if (old_path_id == -1) {
+		SMPL_ERROR("Old object state is dirty or not covered");
+		return false;
+	}
+
+	if (new_path_id == -1) {
+		SMPL_ERROR("New object state is dirty or not covered");
+		return false;
+	}
+
+    auto new_goal_pose = ComputeGoalPose(new_object_state_grid, grasps[0], height);
+
+    // update collision checker for the new object pose
+    planner->manip_checker->setObjectInitialPose(new_goal_pose);
+
+    // clear all memory
+    planner->manip_graph.eraseExperienceGraph();
+    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+
+	// load experience graph for old and new paths
+    std::string old_dir = "/home/fislam/paths/" + std::to_string(old_path_id);
+    std::string new_dir = "/home/fislam/paths/" + std::to_string(new_path_id);
+
+	std::vector<std::string> paths;
+
+	// order matters here
+	paths.push_back(old_dir);
+	paths.push_back(new_dir);
+    planner->manip_graph.loadExperienceGraph(paths);
+
+    // update start state for the heuristic;
+    smpl::RobotState start;
+    std::vector<std::string> missing;
+    if (!leatherman::getJointPositions(
+            start_state.joint_state,
+            start_state.multi_dof_joint_state,
+            planner->robot_model->getPlanningJoints(),
+            start,
+            missing))
+    {	
+    	SMPL_ERROR("Start state is missing planning joints");
+    	return false;
+    }
+    start.push_back(start_state.joint_state.position.back());
+
+    planner->egraph_manip_heuristic.updateStart(start);
+
+    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+    	SMPL_ERROR("Failed to initialize Generic Egraph heuristic");
+    	return false;
+	}
+
+    if (!PlanRobotPath(planner, start_state, new_goal_pose, planner->time_bound, trajectory, intercept_time)) {
+		SMPL_INFO("Unable to plan to the center within time %f",
+		planner->time_bound);
+		return false;
+	}
+
+	return true;
+}
+
 bool QueryNormalPlanner(
 	ConveyorPlanner* planner,
 	const moveit_msgs::RobotState& start_state,
@@ -1305,10 +1404,6 @@ bool QueryNormalPlanner(
 
 	SMPL_INFO("#######    Normal Planner: Query object state: %.2f %.2f %.2f    #######", 
 			object_state_grid[0], object_state_grid[1], object_state_grid[2]);
-
-    //////////////////////////////////////////////////////
-    // Compute path to object goal and store experience //
-    //////////////////////////////////////////////////////
 
     auto goal_pose = ComputeGoalPose(object_state_grid, grasps[0], height);
 
@@ -1329,9 +1424,6 @@ bool QueryNormalPlanner(
 		allowed_time);
 		return false;
 	}
-
-    SMPL_INFO("Total trajectory time %f, Intercept time: %f",
-    	trajectory->joint_trajectory.points.back().time_from_start.toSec(), intercept_time);
 
 	return true;
 }
@@ -1371,10 +1463,6 @@ bool QueryAllTestsPlanner(
 		}
 
 		printf("Path id is %d\n", path_id);
-
-	    //////////////////////////////////////////////////////
-	    // Compute path to object goal and store experience //
-	    //////////////////////////////////////////////////////
 
 	    auto goal_pose = ComputeGoalPose(object_state, grasps[0], height);
 

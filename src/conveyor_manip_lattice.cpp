@@ -877,26 +877,26 @@ bool ConveyorManipLattice::setStart(const RobotState& state)
         return false;
     }
 
-    RobotState state_full(robot()->jointVariableCount() + 1, 0);
-    std::copy(state.begin(), state.end(), state_full.begin());
+    // RobotState state_full(robot()->jointVariableCount() + 1, 0);
+    // std::copy(state.begin(), state.end(), state_full.begin());
 
     // check if the start configuration is in collision
-    if (!collisionChecker()->isStateValid(state_full, true)) {
+    if (!collisionChecker()->isStateValid(state, true)) {
         auto* vis_name = "invalid_start";
-        SV_SHOW_WARN_NAMED(vis_name, collisionChecker()->getCollisionModelVisualization(state_full));
+        SV_SHOW_WARN_NAMED(vis_name, collisionChecker()->getCollisionModelVisualization(state));
         SMPL_WARN(" -> in collision");
         return false;
     }
 
     auto* vis_name = "start_config";
-    SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(state_full, vis_name));
+    SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(state, vis_name));
 
     // get arm position in environment
-    RobotCoord start_coord(state_full.size());
-    stateToCoord(state_full, start_coord);
+    RobotCoord start_coord(state.size());
+    stateToCoord(state, start_coord);
     SMPL_INFO_STREAM_NAMED(G_LOG, "  start coord: " << start_coord);
 
-    m_start_state_id = getOrCreateState(start_coord, state_full);
+    m_start_state_id = getOrCreateState(start_coord, state);
 
     m_actions->updateStart(state);
 

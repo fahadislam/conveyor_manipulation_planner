@@ -240,6 +240,95 @@ bool ConveyorManipLatticeEgraph::extractPath(
     return true;
 }
 
+bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::string>& paths)
+{
+    SMPL_INFO("Load Experience Graph at %s", paths[0].c_str());
+
+
+    for (const auto& path : paths) {
+        boost::filesystem::path p(path);
+        if (!boost::filesystem::is_directory(p)) {
+            SMPL_ERROR("'%s' is not a directory", paths[0].c_str());
+            return false;
+        }
+
+        for (auto dit = boost::filesystem::directory_iterator(p);
+            dit != boost::filesystem::directory_iterator(); ++dit)
+        {
+            auto& filepath = dit->path().generic_string();
+            std::vector<RobotState> egraph_states;
+            if (!parseExperienceGraphFile(filepath, egraph_states)) {
+                continue;
+            }
+
+            if (egraph_states.empty()) {
+                continue;
+            }
+
+            SMPL_INFO("Create hash entries for experience graph states");
+
+            auto& pp = egraph_states.front();  // previous robot state
+            RobotCoord pdp(robot()->jointVariableCount() + 1); // previous robot coord
+            stateToCoord(egraph_states.front(), pdp);
+
+            auto pid = m_egraph.insert_node(pp);
+            m_coord_to_nodes[pdp].push_back(pid);
+
+            // --
+            // int entry_id = reserveHashEntry();
+            // auto* entry = getHashEntry(entry_id);
+            // entry->coord = pdp;
+            // entry->state = pp;
+            // ++
+            int entry_id = getOrCreateState(pdp, pp);
+            // printf("front egraph node id is %d\n", entry_id);
+
+            // map state id <-> experience graph state
+            m_egraph_state_ids.resize(pid + 1, -1);
+            m_egraph_state_ids[pid] = entry_id;
+            m_state_to_node[entry_id] = pid;
+
+            std::vector<RobotState> edge_data;
+            for (size_t i = 1; i < egraph_states.size(); ++i) {
+                auto& p = egraph_states[i];
+                RobotCoord dp(robot()->jointVariableCount() + 1);
+                stateToCoord(p, dp);
+                if (dp != pdp) {
+                    // found a new discrete state along the path
+
+                    auto id = m_egraph.insert_node(p);
+                    m_coord_to_nodes[dp].push_back(id);
+
+                    // --
+                    // int entry_id = reserveHashEntry();
+                    // printf("    egraph node id is %d\n", entry_id);
+                    // auto* entry = getHashEntry(entry_id);
+                    // entry->coord = dp;
+                    // entry->state = p;
+                    // ++
+                    int entry_id = getOrCreateState(dp, p);
+
+                    m_egraph_state_ids.resize(id + 1, -1);
+                    m_egraph_state_ids[id] = entry_id;
+                    m_state_to_node[entry_id] = id;
+                    m_egraph.insert_edge(pid, id, edge_data);
+
+                    pdp = dp;
+                    pid = id;
+                    edge_data.clear();
+                } else {
+                    // gather intermediate robot states
+                    edge_data.push_back(p);
+                }
+            }
+        }        
+    }
+
+
+    SMPL_INFO("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
+    return true;
+}
+
 bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
 {
     SMPL_INFO("Load Experience Graph at %s", path.c_str());
