@@ -273,7 +273,8 @@ int ConveyorManipHeuristic::GetFromToHeuristic(int from_id, int to_id)
         }
 
         double w = 5.0;
-        const double dist = std::max(computeAngularDistance(from_p, to_p), w * max_time);
+        // const double dist = std::max(computeAngularDistance(from_p, to_p), w * max_time);
+        const double dist = w * max_time;
 
         const int h = FIXED_POINT_RATIO * dist;
         return h;

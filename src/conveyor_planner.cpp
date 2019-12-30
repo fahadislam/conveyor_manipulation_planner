@@ -338,19 +338,47 @@ auto Sample(const std::vector<smpl::RobotState>& path, double t)
     return path.back();
 }
 
+// static
+// auto MakeInterpolatedTrajectory(
+//     const std::vector<smpl::RobotState>& path,
+//     double time_delta)
+//     -> std::vector<smpl::RobotState>
+// {
+//     std::vector<smpl::RobotState> interp_path;
+//     double duration = path.back().back() - path.front().back();
+//     auto samples = std::max(2, (int)std::round(duration / time_delta) + 1);
+//     for (auto i = 0; i < samples; ++i) {
+//         auto t = duration * double(i) / double(samples - 1);
+//         auto p = Sample(path, t);
+//         interp_path.push_back(p);
+//     }
+//     return interp_path;
+// }
+
 static
 auto MakeInterpolatedTrajectory(
     const std::vector<smpl::RobotState>& path,
-    double time_delta)
+    double time_delta,
+    double t_max)
     -> std::vector<smpl::RobotState>
 {
     std::vector<smpl::RobotState> interp_path;
     double duration = path.back().back() - path.front().back();
-    auto samples = std::max(2, (int)std::round(duration / time_delta) + 1);
+    auto samples = std::max(2, (int)std::round(t_max / time_delta) + 1);
     for (auto i = 0; i < samples; ++i) {
-        auto t = duration * double(i) / double(samples - 1);
+        auto t = i * time_delta;
         auto p = Sample(path, t);
         interp_path.push_back(p);
+    }
+
+	std::vector<smpl::RobotState> postreplan;
+    for (const auto& wp : path) {
+        if (wp.back() >= t_max) {
+        	postreplan.push_back(wp);
+        }
+    }
+    for (size_t i = 0; i < postreplan.size(); ++i) {	// skip the first wp it's part of prereplan also
+    	interp_path.push_back(postreplan[i]);
     }
     return interp_path;
 }
@@ -554,7 +582,8 @@ bool WritePath(
                 ofs << ',';
             }
         }
-        ofs << ',' << traj.joint_trajectory.points[widx].time_from_start;
+        ofs << ',' << traj.joint_trajectory.points[widx].time_from_start.toSec();
+        // printf("widx %zu time %f\n", widx, traj.joint_trajectory.points[widx].time_from_start.toSec());
         ofs << '\n';
     }
 
@@ -1032,31 +1061,33 @@ bool PlanRobotPath(
 
 #if 1
 	    // Only need to interpolate until the time when we stop replanning
-	    double last_replan_time = 5.0;
-
-	    // split path before and after last replan time
-	    std::vector<smpl::RobotState> prereplan, postreplan;
-	    for (const auto& wp : path) {
-	        if (wp.back() < last_replan_time) {
-	        	prereplan.push_back(wp);
-	        }
-	        else {
-	        	postreplan.push_back(wp);
-	        }
-	    }
-	    prereplan.push_back(postreplan.front());
+	    // double last_replan_time = 5.0;
+	    double last_replan_time = path.back().back();
 	    const double delta_time = 0.2;
-	    path = MakeInterpolatedTrajectory(prereplan, delta_time);
-	    for (size_t i = 1; i < postreplan.size(); ++i) {	// skip the first wp it's part of prereplan also
-	    	path.push_back(postreplan[i]);
-	    }
-		// to_check_path = path;
-	 //    to_check_path.pop_back();
+	    // printf("ORIGINAL\n");
+	    // for (const auto& wp : path) {
+	    //     SMPL_INFO_STREAM("waypoint: " << wp);
+	    // }
+	    // split path before and after last replan time
+	    // path = MakeInterpolatedTrajectory(prereplan, delta_time);
+	    path = MakeInterpolatedTrajectory(path, delta_time, last_replan_time);
+	    // printf("PREPLAN AFTER INTERP\n");
+	    // for (const auto& wp : path) {
+	    //     SMPL_INFO_STREAM("waypoint: " << wp);
+	    // }
+	    
+	    // printf("FULL\n");
+	    // for (const auto& wp : path) {
+	    //     SMPL_INFO_STREAM("waypoint: " << wp);
+	    // }
 
-	 //    // if (!IsPathValid(planner->manip_checker, to_check_path)) {
-	 //    // 	SMPL_ERROR("Path is invalid after interp");
-	 //    // 	// return getchar();
-	 //    // }
+		auto to_check_path = path;
+	    to_check_path.pop_back();
+	    if (!IsPathValid(planner->manip_checker, to_check_path)) {
+	    	SMPL_ERROR("Path is invalid after interp");
+	    	// return getchar();
+	    }
+
 #endif
 	    // fit spline again
 	    printf("Size of interpolated path: %zu\n", path.size());
@@ -1182,9 +1213,9 @@ bool PreprocessConveyorPlanner(
         	continue;
 	    }
 
-	    // remove previous path and write new path to file
+	    // write path to file
 	    auto egraph_dir = "/home/fislam/paths/" + std::to_string(center_count);
-    	auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
+	    auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
 	    WritePath(planner->robot_model, start_state, traj, egraph_dir, intercept_time);
 
 	    //////////////////////////////////
@@ -1230,7 +1261,7 @@ bool PreprocessConveyorPlanner(
 
 	        moveit_msgs::RobotTrajectory traj;
 	        double intercept_time;
-	        if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, &traj, intercept_time, false)) {
+	        if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, &traj, intercept_time, iter == 0)) {
 	        	SMPL_INFO("		Pose is NOT reachable");
 	        	SMPL_INFO("-----------------------------------------------------------\n\n\n");
 	        	if (iter == 0) {
@@ -1239,6 +1270,12 @@ bool PreprocessConveyorPlanner(
 	        	}
 	        }
 	        else {
+	        	if (iter == 0) {
+				    // remove previous path and write path to file (to resolve mismatch)
+				    // issue because of interpolation)
+				    auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
+				    WritePath(planner->robot_model, start_state, traj, egraph_dir, intercept_time);
+				}
 	        	planner->hkey_dijkstra.removeStateFromDirtyList(state_id); // if dirty
 	        	planner->hkey_dijkstra.removeStateFromUncoveredList(state_id);
 	        	planner->object_graph.setPathId(state_id, center_count);
@@ -1252,6 +1289,7 @@ bool PreprocessConveyorPlanner(
 	    	center_count++;
 	    }
     	SMPL_INFO("No. center states %d", center_count);
+    	// getchar();
 	}
 	SMPL_INFO("Preprocessing Completed");
 	SMPL_INFO("No. center states %d", center_count);

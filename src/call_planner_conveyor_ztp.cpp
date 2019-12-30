@@ -81,6 +81,8 @@ std::unique_ptr<tf::TransformListener> g_listener;
 geometry_msgs::PoseStamped g_pose_msg;
 
 bool g_request_active = false;
+double g_time_first_estimate = 0.0;
+double g_time_current_estimate = 0.0;
 
 enum  PlannerMode
 {
@@ -106,7 +108,7 @@ public:
     {
         gripper_command_client.reset(new GripperCommandActionClient(
                     "r_gripper_controller/gripper_action"));
-        if (!gripper_command_client->waitForServer(ros::Duration(5.0))) {
+        if (!gripper_command_client->waitForServer(ros::Duration(1.0))) {
             ROS_ERROR("Gripper Action client not available");
         }
         return true;
@@ -167,7 +169,7 @@ public:
             "r_arm_controller/follow_joint_trajectory"));
 
         // wait for action server to come up
-        if(!traj_client_->waitForServer(ros::Duration(5.0))){
+        if(!traj_client_->waitForServer(ros::Duration(1.0))){
             ROS_ERROR("joint_trajectory_action server not available");
         }
         return true;
@@ -648,6 +650,10 @@ void DopePoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg)
 {
     // ROS_INFO("Dope pose callback!!");
     g_pose_msg = *msg;
+    g_time_current_estimate = g_pose_msg.header.stamp.toSec();
+    if (!g_request_active) {
+        g_time_first_estimate = g_time_current_estimate;
+    }
     g_request_active = true;
 }
 
@@ -722,8 +728,22 @@ bool PickupObject(
     ROS_INFO("Starting pick up!");
     arm->startTrajectory(goal_conveyor, false);
 
+    // wait until intercept time or until updated pose received
+    auto begin = ros::Time::now();
+    while (true) {
+        auto elapsed_time = ros::Time::now() - begin;
+        auto pose_time_since = g_time_current_estimate - begin.toSec();
+        if (elapsed_time.toSec() > intercept_time) {    // time to intercept
+            break;
+        }
+        if (pose_time_since > 0.0) {   // updated pose_out
+            return false;
+        }
+        ros::Duration(0.001).sleep();
+    }
+
     // Close gripper
-    std::this_thread::sleep_for(std::chrono::microseconds(int(intercept_time * 1000000.0)));
+    // std::this_thread::sleep_for(std::chrono::microseconds(int(intercept_time * 1000000.0)));
     ROS_INFO("Closing gripper");
     gripper->CloseGripper(true);
 
@@ -731,7 +751,7 @@ bool PickupObject(
     ROS_INFO("Going back to home configuration");
     arm->startTrajectory(arm->armHomeTrajectory(start_state), true);
     gripper->OpenGripper(true);
-    g_request_active = false;
+    return true;
 }
 
 bool PickupObjectAtOffset(
@@ -748,13 +768,12 @@ bool PickupObjectAtOffset(
 
     if (t_wait.toSec() < 0.0) {
         ROS_ERROR("Sorry you missed the object by %f secs", t_wait.toSec());
-        g_request_active = false;
         return false;
     }
     ROS_INFO("Object wait time: %f", t_wait.toSec());
     ros::Duration(t_wait).sleep();
     // Start pick up
-    PickupObject(traj, intercept_time, start_state, gripper, arm);
+    return PickupObject(traj, intercept_time, start_state, gripper, arm);
 }
 
 bool ExecutePickup(
@@ -771,17 +790,15 @@ bool ExecutePickup(
     case ExecutionMode::SIMULATION:
     {
         AnimatePath(manip_cchecker, traj);
-        break;
+        return true;
     }
     case ExecutionMode::REAL_ROBOT_HARDCODED:
     {
-        PickupObject(traj, intercept_time, start_state, gripper, arm);
-        break;
+        return PickupObject(traj, intercept_time, start_state, gripper, arm);
     }
     case ExecutionMode::REAL_ROBOT_PERCEPTION:
     {
-        PickupObjectAtOffset(traj, time_offset, intercept_time, start_state, gripper, arm);
-        break;
+        return PickupObjectAtOffset(traj, time_offset, intercept_time, start_state, gripper, arm);
     }
     }
 }
@@ -1134,18 +1151,19 @@ int main(int argc, char* argv[])
 
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_REPLAN;
-    // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
+    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
     ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
-    bool ret;
+    bool ret_plan, ret_exec;
     double intercept_time;
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
-    std::vector<double> object_state = {0.420000, 1.380000, 2.356194}; // INCONSISTENT GOAL
+    // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
+    std::vector<double> object_state = {0.40, 1.30, -1.658063}; // invalid path example
     std::vector<double> object_state_old = {0.420000, 1.320000, 2.356194}; // INCONSISTENT GOAL
     std::vector<double> object_state_new = {0.450000, 1.380000, 0.0}; // INCONSISTENT GOAL
 
@@ -1163,6 +1181,10 @@ int main(int argc, char* argv[])
         gripper.init();
     }
 
+    start_state.joint_state.name.push_back("time");
+    start_state.joint_state.position.push_back(0.0);
+
+    moveit_msgs::RobotState replan_state;
     while(ros::ok()) {
         // Wait for the object pose if using perception
         if (execution_mode == ExecutionMode::REAL_ROBOT_PERCEPTION) {
@@ -1173,15 +1195,41 @@ int main(int argc, char* argv[])
             }
             // add offset to object state
             object_state[1] += time_offset * object_velocity[1];
+            
+            // see what object state was in retrospect
+            double time_elapsed = g_time_current_estimate - g_time_first_estimate;
+
+            replan_state = start_state;
+            printf("time elapsed since first pose received: %f\n", time_elapsed);
+
+            if (time_elapsed < 1e-6) {  // if first pose received
+                object_state_old = object_state;
+            }
+            else {  // if subsequent pose of the same object
+                object_state_new = object_state;
+                double dist_moved = fabs(time_elapsed * object_velocity[1]);
+                object_state_new[1] += dist_moved;
+
+                // find the new start state
+                for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
+                    double replan_buffer = planning_buffer + planning_config.time_bound;
+                    if (traj.joint_trajectory.points[i].time_from_start.toSec() > time_elapsed + replan_buffer) {
+                        for (size_t j = 0; j < 7; ++j) {
+                            replan_state.joint_state.position[j + 1] = traj.joint_trajectory.points[i].positions[j]; 
+                        }
+                        replan_state.joint_state.position[8] = traj.joint_trajectory.points[i].time_from_start.toSec();
+                        break;
+                    }
+                }
+                SMPL_INFO("Replan from time: %f", replan_state.joint_state.position[8]);
+                planner_mode = PlannerMode::CONST_TIME_REPLAN;
+            }
         }
 
         switch (planner_mode) {
         case PlannerMode::CONST_TIME_PLAN:
         {
-            start_state.joint_state.name.push_back("time");
-            start_state.joint_state.position.push_back(0.0);
-
-            ret = QueryConstTimePlanner(
+            ret_plan = QueryConstTimePlanner(
                         &conveyor_planner,
                         start_state,
                         grasps,
@@ -1193,12 +1241,9 @@ int main(int argc, char* argv[])
         }
         case PlannerMode::CONST_TIME_REPLAN:
         {
-            start_state.joint_state.name.push_back("time");
-            start_state.joint_state.position.push_back(2.654397445);
-
-            ret = QueryConstTimeReplanner(
+            ret_plan = QueryConstTimeReplanner(
                         &conveyor_planner,
-                        start_state,
+                        replan_state,
                         grasps,
                         object_state_old,
                         object_state_new,
@@ -1209,7 +1254,7 @@ int main(int argc, char* argv[])
         }
         case PlannerMode::NORMAL_QUERY:
         {
-            ret = QueryNormalPlanner(
+            ret_plan = QueryNormalPlanner(
                         &conveyor_planner,
                         start_state,
                         grasps,
@@ -1221,7 +1266,7 @@ int main(int argc, char* argv[])
         }
         case PlannerMode::PREPROCESS:
         {
-            ret = PreprocessConveyorPlanner(
+            ret_plan = PreprocessConveyorPlanner(
                 &conveyor_planner,
                 start_state,
                 grasps,
@@ -1230,7 +1275,7 @@ int main(int argc, char* argv[])
         }
         case PlannerMode::ALL_TESTS_QUERY:
         {
-            ret = QueryAllTestsPlanner(
+            ret_plan = QueryAllTestsPlanner(
                 &conveyor_planner,
                 start_state,
                 grasps,
@@ -1248,24 +1293,35 @@ int main(int argc, char* argv[])
             break;
         }
         
-        if (ret) {
+        if (ret_plan) {
             SMPL_INFO("Total trajectory time: %f, intercept time: %f",
                     traj.joint_trajectory.points.back().time_from_start.toSec(), intercept_time);
-            ExecutePickup(
-                execution_mode,
-                time_offset,
-                intercept_time,
-                start_state,
-                &manip_cchecker,
-                &traj,
-                &gripper,
-                &arm);
+            ret_exec = ExecutePickup(
+                            execution_mode,
+                            time_offset,
+                            intercept_time,
+                            start_state,
+                            &manip_cchecker,
+                            &traj,
+                            &gripper,
+                            &arm);
+            if (ret_exec) {
+                SMPL_INFO("Object picked up successfully!!");
+            }
+            else {
+                SMPL_WARN("Execution Incomplete; request is still active");
+                continue;   // g_request_active remains true;
+            }
         }
         else {
             if (execution_mode == ExecutionMode::SIMULATION) {
                 break;
             }
-            g_request_active = false;
+        }
+        g_request_active = false;
+        if (planner_mode = PlannerMode::CONST_TIME_REPLAN) {
+            SMPL_INFO("Switching back to CONST_TIME_PLAN mode");
+            planner_mode = PlannerMode::CONST_TIME_PLAN;
         }
     }
 
