@@ -454,48 +454,14 @@ bool ConveyorManipLatticeEgraph::shortcut(
         max_time = std::max(max_time, t);
     }
 
-    SMPL_INFO_STREAM("Shortcut " << first_entry->state << " -> " << second_entry->state);
-    SMPL_INFO("  Shortcut %d -> %d!", first_id, second_id);
+    SMPL_DEBUG_STREAM("Shortcut " << first_entry->state << " -> " << second_entry->state);
 
     double time_diff = second_entry->state.back() - first_entry->state.back();
     if (time_diff < max_time) {
         SMPL_WARN("Failed shortcut time-wise!");
         return false;
     }
-
-    // // collision check shortcut
-    // auto pnit = std::find(m_egraph_state_ids.begin(), m_egraph_state_ids.end(), first_id);
-    // auto cnit = std::find(m_egraph_state_ids.begin(), m_egraph_state_ids.end(), second_id);
-    // if (pnit != m_egraph_state_ids.end() &&
-    //     cnit != m_egraph_state_ids.end())
-    // {
-    //     ExperienceGraph::node_id pn =
-    //             std::distance(m_egraph_state_ids.begin(), pnit);
-    //     ExperienceGraph::node_id cn =
-    //             std::distance(m_egraph_state_ids.begin(), cnit);
-
-    //     SMPL_INFO("Check for shortcut from %d to %d (egraph %zu -> %zu)!", first_id, second_id, pn, cn);
-
-    //     std::vector<ExperienceGraph::node_id> node_path;
-    //     bool found = findShortestExperienceGraphPath(pn, cn, node_path);
-    //     if (found) {
-    //         for (size_t i = 0; i < node_path.size() - 1; ++i) {
-    //             int prev_id = m_egraph_state_ids[node_path[i]];
-    //             ConveyorManipLatticeState* prev_entry = getHashEntry(prev_id);
-    //             assert(prev_entry);
-    //             int current_id = m_egraph_state_ids[node_path[i]];
-    //             ConveyorManipLatticeState* current_entry = getHashEntry(current_id);
-    //             assert(current_entry);
-    //             if (!collisionChecker()->isStateToStateValid(
-    //                 prev_entry->state, current_entry->state))
-    //                 SMPL_WARN("Shortcut in collision");
-    //             return false;
-    //             }
-    //     }
-    //     else {
-    //         ROS_ERROR("Failed to find shorcut path; problem!!!");
-    //     }
-    // }
+    SMPL_INFO("  Shortcut %d -> %d!", first_id, second_id);
 
     auto* vis_name = "shortcut";
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(first_entry->state, "shortcut_from"));
@@ -524,7 +490,7 @@ bool ConveyorManipLatticeEgraph::snap(
         return false;
     }
 
-    SMPL_INFO_STREAM("Snap " << first_entry->state << " -> " << second_entry->state);
+    SMPL_DEBUG_STREAM("Snap " << first_entry->state << " -> " << second_entry->state);
     auto* vis_name = "snap";
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(first_state_positions, "snap_from"));
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(second_state_positions, "snap_to"));

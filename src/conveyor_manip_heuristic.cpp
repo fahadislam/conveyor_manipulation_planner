@@ -266,11 +266,15 @@ int ConveyorManipHeuristic::GetFromToHeuristic(int from_id, int to_id)
             max_time = std::max(max_time, t);
         }
 
-        Affine3 from_p;
-        Affine3 to_p;
-        if (!m_pose_ext->projectToPose(from_id, from_p) || !m_pose_ext->projectToPose(to_id, to_p)) {
-            return 0;
+        if (max_time > to_state.back() - from_state.back()) {
+            return 10000000;
         }
+
+        // Affine3 from_p;
+        // Affine3 to_p;
+        // if (!m_pose_ext->projectToPose(from_id, from_p) || !m_pose_ext->projectToPose(to_id, to_p)) {
+        //     return 0;
+        // }
 
         double w = 5.0;
         // const double dist = std::max(computeAngularDistance(from_p, to_p), w * max_time);

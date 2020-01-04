@@ -674,12 +674,10 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
                 // Add lift motion
                 // x_.translation().y() += lift_offset_y;
                 x_.translation().z() += lift_offset_z;
-                auto temp = q_[6];
                 if (!m_ik_iface->computeIK(x_, q_, q_)) {
                     SMPL_INFO("Failed to lift up");
                     return false;
                 }
-                q_[6] = temp;
                 wp = q_;
                 double time_state = action.back().back() + lift_time;
                 wp.push_back(time_state);

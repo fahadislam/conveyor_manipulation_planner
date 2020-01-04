@@ -1,11 +1,11 @@
 #ifndef sbpl_collision_object_manip_checker_h
 #define sbpl_collision_object_manip_checker_h
 
+#include <fcl/narrowphase/collision.h> // collide
 #include <fcl/narrowphase/collision_object.h>
 #include <sbpl_collision_checking/collision_space.h>
 #include <smpl/collision_checker.h>
 #include <smpl/spatial.h>
-
 #include <smpl_urdf_robot_model/smpl_urdf_robot_model.h>
 
 namespace smpl {
@@ -60,6 +60,9 @@ public:
 
     void setObjectInitialPose(const Eigen::Affine3d& pose);
 
+    void inflateCollisionObject();
+    void deflateCollisionObject();
+
     smpl::ForwardKinematicsInterface* m_fk_iface = nullptr;
 
     Eigen::Affine3d object_init_pose;
@@ -70,6 +73,9 @@ public:
     std::map<std::string, std::string> link_to_mesh_map;
     std::vector<LinkCollisionModel> link_collision_models;
     std::unique_ptr<fcl::CollisionObjectf> obj_conveyor;
+
+    std::shared_ptr<fcl::Boxf> box_geom_actual;
+    std::shared_ptr<fcl::Boxf> box_geom_inflated;
 
     // for gripper visualization
     std::map<std::string, Eigen::Affine3d> link_to_pose_map;

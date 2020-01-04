@@ -4,7 +4,6 @@
 #include <eigen_conversions/eigen_msg.h>
 #include <fcl/geometry/bvh/BVH_model.h>
 #include <fcl/narrowphase/collision_request.h> // CollisionRequest, CollisionResult
-#include <fcl/narrowphase/collision.h> // collide
 #include <geometric_shapes/mesh_operations.h>
 #include <sbpl_collision_checking/shape_visualization.h>
 #include <smpl/angles.h>
@@ -116,10 +115,13 @@ bool Init(
     case smpl::collision::ShapeType::Box:
     {
         auto* box = static_cast<const smpl::collision::BoxShape*>(collision_object->shapes[0]);
-        auto box_geom = std::make_shared<fcl::Boxf>(
+        checker->box_geom_actual = std::make_shared<fcl::Boxf>(
                 box->size[0], box->size[1], box->size[2]);
+        double inflation = 1.1;
+        checker->box_geom_inflated = std::make_shared<fcl::Boxf>(
+                box->size[0] * inflation, box->size[1] * inflation, box->size[2] * inflation);
         fcl::Transform3f box_pose;
-        checker->obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom, box_pose);
+        checker->obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(checker->box_geom_inflated, box_pose);
         break;
     }
     default:
@@ -135,6 +137,18 @@ bool Init(
 void ConveyorManipChecker::setObjectInitialPose(const Eigen::Affine3d& pose)
 {
     object_init_pose = pose;
+}
+
+void ConveyorManipChecker::inflateCollisionObject()
+{
+    fcl::Transform3f box_pose;
+    obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom_inflated, box_pose);
+}
+
+void ConveyorManipChecker::deflateCollisionObject()
+{
+    fcl::Transform3f box_pose;
+    obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom_actual, box_pose);
 }
 
 void ConveyorManipChecker::updateGripperMeshesState()
@@ -266,9 +280,9 @@ bool ConveyorManipChecker::isStateValid(
 
     if (!intercept_dist > dist_thresh_fcl) {
         updateObjectSpheresState(state);
-        if (!parent->isStateValid(state_positions)) {
-            return false;
-        }
+        // if (!parent->isStateValid(state_positions)) {
+        //     return false;
+        // }
     }
     else {
         if (!checkStateFCL(state_positions, pose_object)) {
@@ -284,6 +298,17 @@ bool ConveyorManipChecker::isStateToStateValid(
     const smpl::RobotState& finish,
     bool verbose)
 {
+    bool vis = false;
+
+    // if (verbose) {
+    //     printf("Shortcut %f %f\n", start.back(), finish.back());
+    //     // if (fabs(start.back() - 3.6) < 1e-6 && fabs(finish.back() - 3.8) < 1e-6) {
+    //     if (fabs(start.back() - 0.0) < 1e-3 && fabs(finish.back() - 3.71017) < 1e-3) {
+    //         printf("bad edge\n");
+    //         vis = true;
+    //     }
+    // }
+
     // Three step collision checking:
     // 1. Do a regular collision check of the edge from start to finish
     // 2. If away from goal then do crude check of start and finish states only
@@ -307,6 +332,11 @@ bool ConveyorManipChecker::isStateToStateValid(
         auto state_full = path[i];
         state_full.push_back(state_time);
 
+        if (vis) {
+            SV_SHOW_INFO(getCollisionModelVisualization(state_full));
+            printf("showing %zu of total %zu\n", i, path.size());
+            getchar();
+        }
         Eigen::Affine3d pose_object;
 
         pose_object = object_init_pose;
@@ -326,10 +356,10 @@ bool ConveyorManipChecker::isStateToStateValid(
         if (intercept_dist > dist_thresh_fcl) {
             updateObjectSpheresState(state_full);
             // Comment: updateState is called in isStateValid
-            if (!parent->isStateValid(path[i])) {
-                // printf("i %zu size %zu spheres collision \n", i, path.size());
-                return false;
-            }
+            // if (!parent->isStateValid(path[i])) {
+            //     // printf("i %zu size %zu spheres collision \n", i, path.size());
+            //     return false;
+            // }
         }
         else {
             if (!checkStateFCL(path[i], pose_object)) {
