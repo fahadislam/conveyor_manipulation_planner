@@ -1053,7 +1053,7 @@ bool PlanRobotPath(
         }
 
         intercept_time = planner->manip_graph.getInterceptTime(path);
-        double intercept_time_from_start = intercept_time - start_state.joint_state.position[8];
+        intercept_time -= start_state.joint_state.position[8];
         std::vector<SingleJointTrajectory> joint_trajs;
 
 
@@ -1070,7 +1070,7 @@ bool PlanRobotPath(
         // Shortcut Path  //
         ////////////////////
 
-        ShortcutPath(planner, intercept_time_from_start, path);
+        ShortcutPath(planner, intercept_time, path);
 
         /////////////////////////////////////////////////////////
         // Profile/Interpolate path and convert to trajectory  //
@@ -1087,8 +1087,24 @@ bool PlanRobotPath(
             }
         }
 
+        last_replan_time = path.back().back();
         path = MakeInterpolatedTrajectory(path, delta_time, last_replan_time);
         printf("Size of interpolated path: %zu\n", path.size());
+
+        // if (path.size() == 30) {
+        //     for (auto& p : path) {
+        //         // p[6] = M_PI - 0.01;
+        //         p[6] += 4 * M_PI;
+        //     }
+        // }
+
+        // for (auto& p : path) {
+        //     // for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
+        //     //     if (planner->robot_model->isContinuous(j)) {
+        //             p[6] = smpl::angles::normalize_angle(p[6]);
+        //     //     }
+        //     // }
+        // }
 
         // printf("Final path:\n");
         // for (const auto& wp : path) {
@@ -1104,7 +1120,7 @@ bool PlanRobotPath(
         }
         planner->manip_checker->inflateCollisionObject();
 
-
+        // no need for joint_trajs anymore as we are not using cubic profiler
         int num_joints = planner->robot_model->jointVariableCount();
         joint_trajs.resize(num_joints);
         for (size_t i = 0; i < num_joints; ++i) {

@@ -740,11 +740,13 @@ bool PickupObject(
     }
     else {
         goal_conveyor.trajectory.header.stamp = g_first_exec_stamp;
-    }
-
-    if (g_first_exec_stamp.toSec() + traj->joint_trajectory.points[0].time_from_start.toSec() 
-        > ros::Time::now().toSec()) {
-        ROS_ERROR("Replan execution time has passed, fix your bug!");
+        double wait_time = 
+            g_first_exec_stamp.toSec() + traj->joint_trajectory.points[0].time_from_start.toSec()
+            - ros::Time::now().toSec();
+        if (wait_time < 1e-6) {
+            ROS_ERROR("Replan execution time has passed, late by %f secs!", wait_time);
+            return false;
+        }
     }
 
     arm->startTrajectory(goal_conveyor, false);
