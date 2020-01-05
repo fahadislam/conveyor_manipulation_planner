@@ -99,7 +99,8 @@ struct ConveyorPlanner
     smpl::ConveyorManipHeuristic 			manip_heuristic;
     smpl::GenericEgraphHeuristic 			egraph_manip_heuristic;
 
-    double time_bound;
+    double time_bound_;
+    double replan_cutoff_;
 
     ConveyorPlanner() :
         hkey_dijkstra(&object_graph, &object_heuristic)

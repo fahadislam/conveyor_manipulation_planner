@@ -501,6 +501,7 @@ struct PlannerConfig
     double size_y;
     double time_bound;
     double buffer_time;
+    double replan_cutoff;
 };
 
 bool ReadPlannerConfig(const ros::NodeHandle &nh, PlannerConfig &config)
@@ -606,6 +607,10 @@ bool ReadPlannerConfig(const ros::NodeHandle &nh, PlannerConfig &config)
         return false;
     }
 
+    if (!nh.getParam("replan_cutoff", config.replan_cutoff)) {
+        ROS_ERROR("Failed to read param 'replan_cutoff' from the param server");
+        return false;
+    }
     return true;
 }
 
@@ -1122,6 +1127,7 @@ int main(int argc, char* argv[])
     params.addParam("size_y", planning_config.size_y);
     params.addParam("time_bound", planning_config.time_bound);
     params.addParam("buffer_time", planning_config.buffer_time);
+    params.addParam("replan_cutoff", planning_config.replan_cutoff);
 
     params.shortcut_path = planning_config.shortcut_path;
 
@@ -1177,14 +1183,14 @@ int main(int argc, char* argv[])
     // TODO: pass all grasps
 
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
-    PlannerMode planner_mode = PlannerMode::CONST_TIME_REPLAN;
+    // PlannerMode planner_mode = PlannerMode::CONST_TIME_REPLAN;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
-    // ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
-    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
+    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     bool ret_plan, ret_exec;
     double intercept_time;
@@ -1192,7 +1198,7 @@ int main(int argc, char* argv[])
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.40, 1.30, 1.0}; //{0.50, 1.37, 1.134464}; // invalid path example
+    std::vector<double> object_state = {0.43, 1.30, -1.483530}; //{0.50, 1.37, 1.134464}; // invalid path example
     std::vector<double> object_state_old = {0.420000, 1.320000, 2.356194}; // INCONSISTENT GOAL
     std::vector<double> object_state_new = {0.450000, 1.380000, 0.0}; // INCONSISTENT GOAL
 

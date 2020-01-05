@@ -83,6 +83,8 @@ public:
     // void clearStates();
     bool checkExperienceGraphState(int state_id) const;
 
+    bool checkReplanCutoffInPath(const std::vector<RobotState>& path, double replan_cutoff);
+
 private:
 
     struct RobotCoordHash

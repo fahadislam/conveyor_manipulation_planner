@@ -326,8 +326,8 @@ auto Sample(const std::vector<smpl::RobotState>& path, double t)
 
             // linearly interpolate single-dof joint positions
             for (auto j = 0; j < num_joints; ++j) {
-                // state[j] = curr[j] + alpha * smpl::shortest_angle_diff(next[j], curr[j]);
-                state[j] = curr[j] + alpha * (next[j] - curr[j]);
+                state[j] = curr[j] + alpha * smpl::shortest_angle_diff(next[j], curr[j]);
+                // state[j] = curr[j] + alpha * (next[j] - curr[j]);
             }
 
             // interpolate timestamp
@@ -698,10 +698,16 @@ bool Init(
         return false;
     }
 
-    if (!params->getParam("time_bound", planner->time_bound)) {
+    if (!params->getParam("time_bound", planner->time_bound_)) {
         SMPL_ERROR_NAMED(CP_LOGGER, "Parameter 'time_bound' not found in planning params");
         return false;
     }
+
+    if (!params->getParam("replan_cutoff", planner->replan_cutoff_)) {
+        SMPL_ERROR_NAMED(CP_LOGGER, "Parameter 'replan_cutoff' not found in planning params");
+        return false;
+    }
+
     std::vector<double> object_resolutions = { res_xy, res_xy, res_yaw };
     if (!planner->object_graph.init(
     		planner->object_model,
@@ -942,6 +948,7 @@ bool PlanRobotPath(
     double& intercept_time,
     bool postprocess = true)
 {
+    bool preprocessing = true;
     std::vector<smpl::RobotState> path;
 
     //==============================================================================//
@@ -972,6 +979,14 @@ bool PlanRobotPath(
     planner->manip_checker->deflateCollisionObject();
     planner->egraph_manip_heuristic.updateGoal(goal);
     planner->manip_checker->inflateCollisionObject();
+
+    if (preprocessing) {
+        bool ret_cutoff = planner->egraph_manip_heuristic.isReplanCutoffBeforeShortcutNode(planner->replan_cutoff_);
+        if (!ret_cutoff) {
+            ROS_WARN("Replan cutoff is after the shortcut node");
+            return false;
+        }
+    }
 
     auto goal_id = planner->manip_graph.getGoalStateID();
     if (goal_id == -1) {
@@ -1064,7 +1079,6 @@ bool PlanRobotPath(
         // - Only shortcut the entire path for preprocessing
         // - Only interpolate path until last_replan_time
         //=============================================================================================
-        double last_replan_time = 6.0;
 
         ////////////////////
         // Shortcut Path  //
@@ -1077,7 +1091,6 @@ bool PlanRobotPath(
         /////////////////////////////////////////////////////////
 
         // Only need to interpolate until the time when we stop replanning
-        const double delta_time = 0.05;
 
         for (auto& p : path) {
             for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
@@ -1087,24 +1100,11 @@ bool PlanRobotPath(
             }
         }
 
-        last_replan_time = path.back().back();
-        path = MakeInterpolatedTrajectory(path, delta_time, last_replan_time);
+        // double last_replan_time = std::min(planner->replan_cutoff_, path.back().back());
+        double interpt_until = path[path.size() - 2].back();
+        const double delta_time = 0.05;
+        path = MakeInterpolatedTrajectory(path, delta_time, interpt_until);
         printf("Size of interpolated path: %zu\n", path.size());
-
-        // if (path.size() == 30) {
-        //     for (auto& p : path) {
-        //         // p[6] = M_PI - 0.01;
-        //         p[6] += 4 * M_PI;
-        //     }
-        // }
-
-        // for (auto& p : path) {
-        //     // for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
-        //     //     if (planner->robot_model->isContinuous(j)) {
-        //             p[6] = smpl::angles::normalize_angle(p[6]);
-        //     //     }
-        //     // }
-        // }
 
         // printf("Final path:\n");
         // for (const auto& wp : path) {
@@ -1115,8 +1115,8 @@ bool PlanRobotPath(
         to_check_path.pop_back();
         planner->manip_checker->deflateCollisionObject();
         if (!IsPathValid(planner->manip_checker, to_check_path)) {
-            SMPL_ERROR("Path is invalid after interp");
-            // return getchar();
+            ROS_WARN("Path is invalid after interp");
+            // getchar();
         }
         planner->manip_checker->inflateCollisionObject();
 
@@ -1194,9 +1194,8 @@ bool PlanRobotPath(
 }
 
 static
-auto ComputeGoalPose(
+auto ComputeObjectPose(
 	const ObjectState& object_state,
-	const Eigen::Affine3d& grasp,
 	double height)
 	-> Eigen::Affine3d
 {
@@ -1206,7 +1205,7 @@ auto ComputeGoalPose(
 	                Eigen::AngleAxisd(0.0, Eigen::Vector3d::UnitY()) *
 	                Eigen::AngleAxisd(0.0, Eigen::Vector3d::UnitX()));
 
-    return object_pose * grasp.inverse();
+    return object_pose;
 }
 
 bool PreprocessConveyorPlanner(
@@ -1257,10 +1256,11 @@ bool PreprocessConveyorPlanner(
 	    // Compute path to object goal and store experience //
 	    //////////////////////////////////////////////////////
 
-	    auto goal_pose = ComputeGoalPose(center_state, grasps[0], height);
+	    auto object_pose = ComputeObjectPose(center_state, height);
+        auto goal_pose = object_pose * grasps[0].inverse();
 
 	    // update collision checker for the new object pose
-	    planner->manip_checker->setObjectInitialPose(goal_pose);
+	    planner->manip_checker->setObjectInitialPose(object_pose);
 
         // clear all memory
         planner->manip_graph.eraseExperienceGraph();
@@ -1313,10 +1313,11 @@ bool PreprocessConveyorPlanner(
 		    ///////////////////////////////////////
 
 	        // compute correspinding pose for center_state;
-		    auto goal_pose = ComputeGoalPose(object_state, grasps[0], height);
+		    auto object_pose = ComputeObjectPose(object_state, height);
+            auto goal_pose = object_pose * grasps[0].inverse();
 
 		    // update collision checker for the new object pose
-		    planner->manip_checker->setObjectInitialPose(goal_pose);
+		    planner->manip_checker->setObjectInitialPose(object_pose);
 
 			// refresh all datastructures
 			planner->manip_graph.eraseExperienceGraph();
@@ -1325,7 +1326,7 @@ bool PreprocessConveyorPlanner(
 
 	        moveit_msgs::RobotTrajectory traj;
 	        double intercept_time;
-	        if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, &traj, intercept_time, iter == 0)) {
+	        if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_, &traj, intercept_time, iter == 0)) {
 	        	SMPL_INFO("		Pose is NOT reachable");
 	        	SMPL_INFO("-----------------------------------------------------------\n\n\n");
 	        	if (iter == 0) {
@@ -1383,10 +1384,11 @@ bool QueryConstTimePlanner(
 		return false;
 	}
 
-    auto goal_pose = ComputeGoalPose(object_state_grid, grasps[0], height);
+    auto object_pose = ComputeObjectPose(object_state_grid, height);
+    auto goal_pose = object_pose * grasps[0].inverse();
 
     // update collision checker for the new object pose
-    planner->manip_checker->setObjectInitialPose(goal_pose);
+    planner->manip_checker->setObjectInitialPose(object_pose);
 
     // clear all memory
     planner->manip_graph.eraseExperienceGraph();
@@ -1401,9 +1403,9 @@ bool QueryConstTimePlanner(
     	return false;
 	}
 
-    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, trajectory, intercept_time)) {
+    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_ + 1e-2, trajectory, intercept_time)) {
 		SMPL_INFO("Unable to plan to the center within time %f",
-		planner->time_bound);
+		planner->time_bound_);
 		return false;
 	}
 
@@ -1441,10 +1443,11 @@ bool QueryConstTimeReplanner(
 		return false;
 	}
 
-    auto new_goal_pose = ComputeGoalPose(new_object_state_grid, grasps[0], height);
+    auto new_object_pose = ComputeObjectPose(new_object_state_grid, height);
+    auto new_goal_pose = new_object_pose * grasps[0].inverse();
 
     // update collision checker for the new object pose
-    planner->manip_checker->setObjectInitialPose(new_goal_pose);
+    planner->manip_checker->setObjectInitialPose(new_object_pose);
 
     // clear all memory
     planner->manip_graph.eraseExperienceGraph();
@@ -1483,9 +1486,9 @@ bool QueryConstTimeReplanner(
     	return false;
 	}
 
-    if (!PlanRobotPath(planner, start_state, new_goal_pose, planner->time_bound, trajectory, intercept_time)) {
+    if (!PlanRobotPath(planner, start_state, new_goal_pose, planner->time_bound_, trajectory, intercept_time)) {
 		SMPL_INFO("Unable to plan to the center within time %f",
-		planner->time_bound);
+		planner->time_bound_);
 		return false;
 	}
 
@@ -1507,10 +1510,11 @@ bool QueryNormalPlanner(
 	SMPL_INFO("#######    Normal Planner: Query object state: %.2f %.2f %.2f    #######", 
 			object_state_grid[0], object_state_grid[1], object_state_grid[2]);
 
-    auto goal_pose = ComputeGoalPose(object_state_grid, grasps[0], height);
+    auto object_pose = ComputeObjectPose(object_state_grid, height);
+    auto goal_pose = object_pose * grasps[0].inverse();
 
     // update collision checker for the new object pose
-    planner->manip_checker->setObjectInitialPose(goal_pose);
+    planner->manip_checker->setObjectInitialPose(object_pose);
 
     // clear all memory
     planner->manip_graph.eraseExperienceGraph();
@@ -1566,10 +1570,11 @@ bool QueryAllTestsPlanner(
 
 		printf("Path id is %d\n", path_id);
 
-	    auto goal_pose = ComputeGoalPose(object_state, grasps[0], height);
+	    auto object_pose = ComputeObjectPose(center_state, height);
+        auto goal_pose = object_pose * grasps[0].inverse();
 
 	    // update collision checker for the new object pose
-	    planner->manip_checker->setObjectInitialPose(goal_pose);
+	    planner->manip_checker->setObjectInitialPose(object_pose);
 
 	    // clear all memory
 	    planner->manip_graph.eraseExperienceGraph();
@@ -1586,9 +1591,9 @@ bool QueryAllTestsPlanner(
 
 		moveit_msgs::RobotTrajectory trajectory;
 	    double intercept_time;
-	    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound, &trajectory, intercept_time, false)) {
+	    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_ + 1e-2, &trajectory, intercept_time, true)) {
 			SMPL_INFO("Unable to plan to the center within time %f",
-			planner->time_bound);
+			planner->time_bound_);
 			getchar();
 		}
 	}

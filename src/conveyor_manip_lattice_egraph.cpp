@@ -454,7 +454,7 @@ bool ConveyorManipLatticeEgraph::shortcut(
         max_time = std::max(max_time, t);
     }
 
-    SMPL_DEBUG_STREAM("Shortcut " << first_entry->state << " -> " << second_entry->state);
+    SMPL_INFO_STREAM("Shortcut " << first_entry->state << " -> " << second_entry->state);
 
     double time_diff = second_entry->state.back() - first_entry->state.back();
     if (time_diff < max_time) {
@@ -599,6 +599,49 @@ bool ConveyorManipLatticeEgraph::checkExperienceGraphState(int state_id) const
         return true;
     }
     return false;
+}
+
+bool ConveyorManipLatticeEgraph::checkReplanCutoffInPath(
+    const std::vector<RobotState>& path,
+    double replan_cutoff)
+{
+    if (m_egraph.num_nodes() == 0) {
+        return true;
+    }
+
+    RobotState path_state;
+    bool found = false;
+    for (const auto& wp : path) {
+        if (fabs(wp.back() - replan_cutoff) < 1e-6) {
+            path_state = wp;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        return false;
+    }
+
+    RobotState eg_state;
+    found = false;
+    for (const auto& egn : m_egraph.m_nodes) {
+        if (fabs(egn.state.back() - replan_cutoff) < 1e-6) {
+            eg_state = egn.state;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        SMPL_ERROR("Replan cutoff state not found in experience");
+        return false;
+    }
+
+    for (size_t i = 0; i < path_state.size(); ++i) {
+        if (fabs(path_state[i] - eg_state[i] > 1e-6)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool ConveyorManipLatticeEgraph::findShortestExperienceGraphPath(
