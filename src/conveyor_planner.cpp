@@ -191,11 +191,49 @@ void ConvertJointVariablePathToJointTrajectory(
     const std::vector<smpl::RobotState>& path,
     const std::string& joint_state_frame,
     const std::string& multi_dof_joint_state_frame,
-    const std::vector<SingleJointTrajectory> joint_trajs,
+    const moveit_msgs::RobotState& start_state,
     moveit_msgs::RobotTrajectory& traj)
 {
     SMPL_INFO("Convert Variable Path to Robot Trajectory");
 
+    int num_joints = robot->jointVariableCount();
+    std::vector<SingleJointTrajectory> joint_trajs(num_joints);
+    for (size_t i = 0; i < num_joints; ++i) {
+        joint_trajs[i].positions.resize(path.size(), 0.0);
+        joint_trajs[i].velocities.resize(path.size(), 0.0);
+        joint_trajs[i].accelerations.resize(path.size(), 0.0);
+        for (size_t j = 0; j < path.size(); ++j) {
+            joint_trajs[i].positions[j] = path[j][i];
+        }
+    }
+
+    std::vector<double> time_diff(path.size() -1, std::numeric_limits<double>::epsilon());
+    for (size_t i = 0; i < path.size() - 1; ++i) {
+        time_diff[i] = path[i + 1].back() - path[i].back();
+    }
+
+    // heuristic profiling
+    for (size_t i = 0; i < num_joints; ++i) {
+        for (size_t j = 1; j < path.size() - 2; ++j) {
+            double dp_prev = (path[j][i] - path[j - 1][i]) / time_diff[j - 1];
+            double dp_next = (path[j + 1][i] - path[j][i]) / time_diff[j];
+            if (dp_prev * dp_next < 0.0) {
+                joint_trajs[i].velocities[j] = 0.0;
+            }
+            else {
+                joint_trajs[i].velocities[j] = (dp_prev + dp_next) / 2;
+            }
+        }
+        joint_trajs[i].velocities[0] = 0.0;
+        joint_trajs[i].velocities.back() = 0.0;
+
+        // make the velocity at the replan state continuous
+        if (start_state.joint_state.velocity.size() != 0) {
+            joint_trajs[i].velocities[0] = start_state.joint_state.velocity[i + 1];
+        }
+    }
+
+    //--------------------------------------
     traj.joint_trajectory.header.frame_id = joint_state_frame;
     traj.multi_dof_joint_trajectory.header.frame_id = multi_dof_joint_state_frame;
 
@@ -663,6 +701,7 @@ bool Init(
     ConveyorKDLRobotModel* robot_model,
     smpl::OccupancyGrid* object_grid,
     smpl::OccupancyGrid* manip_grid,
+    const moveit_msgs::RobotState home_state,
     const Eigen::Vector3d& object_velocity,
     const smpl::PlanningParams* params)	// pass params
 {
@@ -670,6 +709,7 @@ bool Init(
 	planner->manip_checker = manip_checker;
 	planner->object_model = object_model;
 	planner->robot_model = robot_model;
+    planner->home_state_ = home_state;
 
     //////////////////////////////////
     //   Initialize Object Planner  //
@@ -876,66 +916,38 @@ void ShortcutPath(
 }
 
 static
-bool InterpolatePath(smpl::CollisionChecker* cc, std::vector<smpl::RobotState>& path)
+void PostProcessPath(
+    ConveyorPlanner* planner,
+    std::vector<smpl::RobotState>& path,
+    double resolution,
+    double intercept_time)
 {
-    if (path.empty()) {
-        return true;
-    }
+    ////////////////////
+    // Shortcut Path  //
+    ////////////////////
 
-    auto num_joints = path.front().size();
-    for (auto& pt : path) {
-        if (pt.size() != num_joints) {
-            SMPL_ERROR("Failed to interpolate trajectory. Input trajectory is malformed");
-            return false;
-        }
-    }
+    ShortcutPath(planner, intercept_time, path);
 
-    std::vector<smpl::RobotState> opath;
+    /////////////////////////////////////////////////////////
+    // Profile/Interpolate path and convert to trajectory  //
+    /////////////////////////////////////////////////////////
 
-    // tack on the first point of the trajectory
-    opath.push_back(path.front());
+    // Only need to interpolate until the time when we stop replanning
 
-    // iterate over path segments
-    for (auto i = size_t(0); i < path.size() - 1; ++i) {
-        auto& curr = path[i];
-        auto& next = path[i + 1];
+    // double last_replan_time = std::min(planner->replan_cutoff_, path.back().back());
+    double interpt_until = path[path.size() - 2].back();
+    path = MakeInterpolatedTrajectory(path, resolution, interpt_until);
+    printf("Size of interpolated path: %zu\n", path.size());
 
-        SMPL_DEBUG_STREAM("Interpolating between " << curr << " and " << next);
-
-        std::vector<smpl::RobotState> ipath;
-        if (!cc->interpolatePath(curr, next, ipath)) {
-            SMPL_ERROR("Failed to interpolate between waypoint %zu and %zu because it's infeasible given the limits.", i, i + 1);
-            return false;
-        }
-
-        // check the interpolated path for collisions, as the interpolator may
-        // take a slightly different
-        auto collision = false;
-        for (auto& point : ipath) {
-            if (!cc->isStateValid(point, false)) {
-                collision = true;
-                break;
+    // unwind path
+    for (size_t i = 1; i < path.size(); ++i) {
+        for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
+            if (planner->robot_model->isContinuous(j)) {
+                int n = std::round((path[i - 1][j] - path[i][j]) / (2 * M_PI));
+                path[i][j] += n * 2 * M_PI;
             }
         }
-
-        if (collision) {
-            SMPL_ERROR("Interpolated path collides. Resorting to original waypoints");
-            opath.push_back(next);
-            continue;
-        }
-
-        if (!ipath.empty()) {
-            // concatenate current path and the intermediate path (we already
-            // have the first waypoint in the path from last iteration)
-            opath.insert(end(opath), std::next(begin(ipath)), end(ipath));
-        }
-
-        SMPL_DEBUG("[%zu] path length: %zu", i, opath.size());
     }
-
-    SMPL_INFO("Original path length: %zu   Interpolated path length: %zu", path.size(), opath.size());
-    path = std::move(opath);
-    return true;
 }
 
 static
@@ -949,7 +961,6 @@ bool PlanRobotPath(
     bool postprocess = true)
 {
     bool preprocessing = true;
-    std::vector<smpl::RobotState> path;
 
     //==============================================================================//
     // By default the collision object remains inflated                             //
@@ -1006,8 +1017,8 @@ bool PlanRobotPath(
     smpl::RobotState start;
     std::vector<std::string> missing;
     if (!leatherman::getJointPositions(
-            start_state.joint_state,
-            start_state.multi_dof_joint_state,
+            planner->home_state_.joint_state,
+            planner->home_state_.multi_dof_joint_state,
             planner->robot_model->getPlanningJoints(),
             start,
             missing))
@@ -1015,7 +1026,7 @@ bool PlanRobotPath(
     	SMPL_ERROR("Start state is missing planning joints");
     	return false;
     }
-    start.push_back(start_state.joint_state.position.back());	// time
+    start.push_back(planner->home_state_.joint_state.position.back());	// time
 
     if (!planner->manip_graph.setStart(start)) {
         SMPL_ERROR("Failed to set start state");
@@ -1045,6 +1056,9 @@ bool PlanRobotPath(
     SMPL_INFO("Expansions bound: %d\n", planner->egraph_planner->m_allowed_expansions);
     b_ret = planner->egraph_planner->replan(allowed_time, &solution_state_ids, &sol_cost);
 
+
+    std::vector<smpl::RobotState> path;
+    std::vector<smpl::RobotState> new_path;
     if (postprocess) {
         if (b_ret && (solution_state_ids.size() > 0)) {
             SMPL_INFO_NAMED(CP_LOGGER, "Planning succeeded");
@@ -1057,8 +1071,8 @@ bool PlanRobotPath(
             SMPL_INFO_NAMED(CP_LOGGER, "  Path Length (states): %zu", solution_state_ids.size());
             SMPL_INFO_NAMED(CP_LOGGER, "  Solution Cost: %d", sol_cost);
 
-            path.clear();
-            if (!planner->manip_graph.extractPath(solution_state_ids, path)) {
+            new_path.clear();
+            if (!planner->manip_graph.extractPath(solution_state_ids, new_path)) {
                 SMPL_ERROR("Failed to convert state id path to joint variable path");
                 return false;
             }
@@ -1067,10 +1081,78 @@ bool PlanRobotPath(
             return b_ret;
         }
 
-        intercept_time = planner->manip_graph.getInterceptTime(path);
-        intercept_time -= start_state.joint_state.position[8];
-        std::vector<SingleJointTrajectory> joint_trajs;
+        intercept_time = planner->manip_graph.getInterceptTime(new_path);
 
+        //=========================================================
+        // If replan request then merge new path with current path
+        // If first plan request then use the new path as it is
+        //=========================================================
+
+        double resolution = 0.05;
+        PostProcessPath(planner, new_path, resolution, intercept_time);
+
+        if (!planner->current_path_.empty()) {
+            size_t cdx;
+            for (cdx = 0; cdx < planner->current_path_.size(); ++cdx) {
+                if (planner->current_path_[cdx].back() > planner->replan_cutoff_) {
+                    break;
+                }
+            }
+            size_t ndx;
+            double buffer = 0.0;
+            for (ndx = 0; ndx < new_path.size(); ++ndx) {
+                if (new_path[ndx].back() > planner->current_path_[cdx].back() + buffer) {
+                    break;
+                }
+            }
+
+            SMPL_INFO("Snapping from time %f to %f", planner->current_path_[cdx].back(), new_path[ndx].back());
+
+            // find path from planner->current_path_[cdx] to new_path[ndx];
+            // TODO: Use this common functio whereever
+            double max_time = 0.0;
+            double diff_time = new_path[ndx].back() - planner->current_path_[cdx].back(); 
+            for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
+                auto from_pos = planner->current_path_[cdx][j];
+                auto to_pos = new_path[ndx][j];
+                auto vel = planner->robot_model->velLimit(j);
+                if (vel <= 0.0) {
+                    continue;
+                }
+                auto t = 0.0;
+                if (planner->robot_model->isContinuous(j)) {
+                    t = smpl::angles::shortest_angle_dist(from_pos, to_pos) / vel;
+                } else {
+                    t = fabs(to_pos - from_pos) / vel;
+                }
+                max_time = std::max(max_time, t);
+            }
+
+            if (max_time > diff_time) {
+                ROS_ERROR("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
+                return false;
+            }
+
+            if (!planner->manip_checker->isStateToStateValid(planner->current_path_[cdx], new_path[ndx])) {
+                ROS_ERROR("Snap between the two paths is invalid");
+                return false;
+            }
+
+            // Combine paths
+            path.resize(new_path.size() - ndx + 1);  // +1 for planner->current_path_[cdx]
+            path[0] = planner->current_path_[cdx];
+            std::copy(new_path.begin() + ndx, new_path.end(), path.begin() + 1);
+
+            // PostProcessPath(planner, path, resolution, intercept_time);
+        }
+        else {
+            path = new_path;
+        }
+
+        printf("new path:\n");
+        for (const auto& wp : path) {
+            SMPL_INFO_STREAM("waypoint: " << wp);
+        }
 
         //=============================================================================================
         // NOTES:
@@ -1080,31 +1162,6 @@ bool PlanRobotPath(
         // - Only interpolate path until last_replan_time
         //=============================================================================================
 
-        ////////////////////
-        // Shortcut Path  //
-        ////////////////////
-
-        ShortcutPath(planner, intercept_time, path);
-
-        /////////////////////////////////////////////////////////
-        // Profile/Interpolate path and convert to trajectory  //
-        /////////////////////////////////////////////////////////
-
-        // Only need to interpolate until the time when we stop replanning
-
-        for (auto& p : path) {
-            for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
-                if (planner->robot_model->isContinuous(j)) {
-                    p[j] = smpl::angles::normalize_angle_positive(p[j]);
-                }
-            }
-        }
-
-        // double last_replan_time = std::min(planner->replan_cutoff_, path.back().back());
-        double interpt_until = path[path.size() - 2].back();
-        const double delta_time = 0.05;
-        path = MakeInterpolatedTrajectory(path, delta_time, interpt_until);
-        printf("Size of interpolated path: %zu\n", path.size());
 
         // printf("Final path:\n");
         // for (const auto& wp : path) {
@@ -1121,74 +1178,16 @@ bool PlanRobotPath(
         planner->manip_checker->inflateCollisionObject();
 
         // no need for joint_trajs anymore as we are not using cubic profiler
-        int num_joints = planner->robot_model->jointVariableCount();
-        joint_trajs.resize(num_joints);
-        for (size_t i = 0; i < num_joints; ++i) {
-            joint_trajs[i].positions.resize(path.size(), 0.0);
-            joint_trajs[i].velocities.resize(path.size(), 0.0);
-            joint_trajs[i].accelerations.resize(path.size(), 0.0);
-            for (size_t j = 0; j < path.size(); ++j) {
-                joint_trajs[i].positions[j] = path[j][i];
-            }
-        }
-
-        std::vector<double> time_diff(path.size() -1, std::numeric_limits<double>::epsilon());
-        for (size_t i = 0; i < path.size() - 1; ++i) {
-            time_diff[i] = path[i + 1].back() - path[i].back();
-        }
-
-#if 1
-        // heuristic profiling
-        for (size_t i = 0; i < num_joints; ++i) {
-            for (size_t j = 1; j < path.size() - 2; ++j) {
-                double dp_prev = (path[j][i] - path[j - 1][i]) / time_diff[j - 1];
-                double dp_next = (path[j + 1][i] - path[j][i]) / time_diff[j];
-                if (dp_prev * dp_next < 0.0) {
-                    joint_trajs[i].velocities[j] = 0.0;
-                }
-                else {
-                    joint_trajs[i].velocities[j] = (dp_prev + dp_next) / 2;
-                }
-            }
-            joint_trajs[i].velocities[0] = 0.0;
-            joint_trajs[i].velocities.back() = 0.0;
-
-            // make the velocity at the replan state continuous
-            if (start_state.joint_state.velocity.size() != 0) {
-                joint_trajs[i].velocities[0] = start_state.joint_state.velocity[i + 1];
-            }
-        }
-
-#else
-        //  cubic spline profiling
-        for (size_t i = 0; i < num_joints; ++i) {
-            joint_trajs[i].velocities[0] = 0.0; joint_trajs[i].velocities.back() = 0.0;
-            // to match the velocity for replan case
-            if (start_state.joint_state.velocity.size() != 0) {
-                joint_trajs[i].velocities[0] = start_state.joint_state.velocity[i + 1];
-            }
-            fit_cubic_spline(
-                    path.size(),
-                    &time_diff[0],
-                    &joint_trajs[i].positions[0],
-                    &joint_trajs[i].velocities[0],
-                    &joint_trajs[i].accelerations[0]);
-        }
-
-        // for (size_t i = 0; i < 3; ++i) {
-        //     printf("%f %f %f %f\n", path[i].back(),
-        //         joint_trajs[6].positions[i], joint_trajs[6].velocities[i], joint_trajs[6].accelerations[i]);
-        // }
-#endif
 
         ConvertJointVariablePathToJointTrajectory(
                 planner->robot_model,
                 path,
-                start_state.joint_state.header.frame_id,
-                start_state.multi_dof_joint_state.header.frame_id,
-                joint_trajs,
+                planner->home_state_.joint_state.header.frame_id,
+                planner->home_state_.multi_dof_joint_state.header.frame_id,
+                start_state,
                 *trajectory);
     }
+    planner->current_path_ = path;
 
     return b_ret;
 }
@@ -1404,89 +1403,6 @@ bool QueryConstTimePlanner(
 	}
 
     if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_ + 1e-2, trajectory, intercept_time)) {
-		SMPL_INFO("Unable to plan to the center within time %f",
-		planner->time_bound_);
-		return false;
-	}
-
-	return true;
-}
-
-bool QueryConstTimeReplanner(
-	ConveyorPlanner* planner,
-	const moveit_msgs::RobotState& start_state,
-	const std::vector<Eigen::Affine3d>& grasps,
-	const ObjectState& old_object_state,
-    const ObjectState& new_object_state,
-    double height,
-    moveit_msgs::RobotTrajectory* trajectory,
-    double& intercept_time)
-{
-	auto old_object_state_grid = planner->object_graph.getDiscreteCenter(old_object_state);
-	auto new_object_state_grid = planner->object_graph.getDiscreteCenter(new_object_state);
-
-	int old_path_id = planner->object_graph.getPathId(old_object_state_grid);
-	int new_path_id = planner->object_graph.getPathId(new_object_state_grid);
-
-	SMPL_INFO("#######    Old object state: %.2f, %.2f, %f    Path id: %d    #######", 
-			old_object_state_grid[0], old_object_state_grid[1], old_object_state_grid[2], old_path_id);
-	SMPL_INFO("#######    New object state: %.2f, %.2f, %f    Path id: %d    #######", 
-			new_object_state_grid[0], new_object_state_grid[1], new_object_state_grid[2], new_path_id);
-
-	if (old_path_id == -1) {
-		SMPL_ERROR("Old object state is dirty or not covered");
-		return false;
-	}
-
-	if (new_path_id == -1) {
-		SMPL_ERROR("New object state is dirty or not covered");
-		return false;
-	}
-
-    auto new_object_pose = ComputeObjectPose(new_object_state_grid, height);
-    auto new_goal_pose = new_object_pose * grasps[0].inverse();
-
-    // update collision checker for the new object pose
-    planner->manip_checker->setObjectInitialPose(new_object_pose);
-
-    // clear all memory
-    planner->manip_graph.eraseExperienceGraph();
-    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
-
-	// load experience graph for old and new paths
-    std::string old_dir = "/home/fislam/paths/" + std::to_string(old_path_id);
-    std::string new_dir = "/home/fislam/paths/" + std::to_string(new_path_id);
-
-	std::vector<std::string> paths;
-
-	// order matters here
-	paths.push_back(old_dir);
-	paths.push_back(new_dir);
-    planner->manip_graph.loadExperienceGraph(paths);
-
-    // update start state for the heuristic;
-    smpl::RobotState start;
-    std::vector<std::string> missing;
-    if (!leatherman::getJointPositions(
-            start_state.joint_state,
-            start_state.multi_dof_joint_state,
-            planner->robot_model->getPlanningJoints(),
-            start,
-            missing))
-    {	
-    	SMPL_ERROR("Start state is missing planning joints");
-    	return false;
-    }
-    start.push_back(start_state.joint_state.position.back());
-
-    planner->egraph_manip_heuristic.updateStart(start);
-
-    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
-    	SMPL_ERROR("Failed to initialize Generic Egraph heuristic");
-    	return false;
-	}
-
-    if (!PlanRobotPath(planner, start_state, new_goal_pose, planner->time_bound_, trajectory, intercept_time)) {
 		SMPL_INFO("Unable to plan to the center within time %f",
 		planner->time_bound_);
 		return false;

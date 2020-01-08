@@ -240,13 +240,10 @@ int ConveyorManipHeuristic::GetFromToHeuristic(int from_id, int to_id)
         const RobotState& from_state = m_ers->extractState(from_id);
         const RobotState& to_state = m_ers->extractState(to_id);
 
-        // printf("before\n");
-        // printf("size from %zu\n", from_state.size());
-        // printf("size to %zu id %d\n", to_state.size(), to_id);
-        if (to_state.back() - from_state.back() < 0) {
+        double diff_time = to_state.back() - from_state.back();
+        if (diff_time < 0) {
             return 10000000;    //infinity causes problems
         }
-        // printf("after\n");
 
         // add time steps respecting velocity limits
         double max_time = 0.0;
@@ -266,7 +263,7 @@ int ConveyorManipHeuristic::GetFromToHeuristic(int from_id, int to_id)
             max_time = std::max(max_time, t);
         }
 
-        if (max_time > to_state.back() - from_state.back()) {
+        if (max_time > diff_time) {
             return 10000000;
         }
 

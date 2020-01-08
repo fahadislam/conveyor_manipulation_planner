@@ -101,6 +101,8 @@ struct ConveyorPlanner
 
     double time_bound_;
     double replan_cutoff_;
+    moveit_msgs::RobotState home_state_;
+    std::vector<smpl::RobotState> current_path_;
 
     ConveyorPlanner() :
         hkey_dijkstra(&object_graph, &object_heuristic)
@@ -115,6 +117,7 @@ bool Init(
     ConveyorKDLRobotModel* robot_model,
     smpl::OccupancyGrid* object_grid,
     smpl::OccupancyGrid* manip_grid,
+    const moveit_msgs::RobotState home_state,
     const Eigen::Vector3d& object_velocity,
     const smpl::PlanningParams* manip_params);
 
@@ -129,16 +132,6 @@ bool QueryConstTimePlanner(
 	const moveit_msgs::RobotState& start_state,
 	const std::vector<Eigen::Affine3d>& grasps,
     const ObjectState& object_state,
-    double height,
-    moveit_msgs::RobotTrajectory* trajectory,
-    double& intercept_time);
-
-bool QueryConstTimeReplanner(
-	ConveyorPlanner* planner,
-	const moveit_msgs::RobotState& start_state,
-	const std::vector<Eigen::Affine3d>& grasps,
-	const ObjectState& old_object_state,
-    const ObjectState& new_object_state,
     double height,
     moveit_msgs::RobotTrajectory* trajectory,
     double& intercept_time);

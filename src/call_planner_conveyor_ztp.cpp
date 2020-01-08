@@ -90,7 +90,6 @@ enum  PlannerMode
 {
     NORMAL_QUERY = 0,
     CONST_TIME_PLAN,
-    CONST_TIME_REPLAN,
     ALL_TESTS_QUERY,
     PREPROCESS
 };
@@ -728,6 +727,8 @@ bool PickupObject(
     GripperMachine *gripper,
     RobotArm* arm)
 {
+    intercept_time -= start_state.joint_state.position[8];
+
     // Start pick up
     static ros::Time g_first_exec_stamp;
     control_msgs::FollowJointTrajectoryGoal goal_conveyor;
@@ -741,7 +742,7 @@ bool PickupObject(
 
     if (traj->joint_trajectory.points[0].time_from_start.toSec() < 1e-6) {
         goal_conveyor.trajectory.header.stamp = ros::Time::now();
-        g_first_exec_stamp = goal_conveyor.trajectory.header.stamp; 
+        g_first_exec_stamp = goal_conveyor.trajectory.header.stamp;
     }
     else {
         goal_conveyor.trajectory.header.stamp = g_first_exec_stamp;
@@ -749,12 +750,19 @@ bool PickupObject(
             g_first_exec_stamp.toSec() + traj->joint_trajectory.points[0].time_from_start.toSec()
             - ros::Time::now().toSec();
         if (wait_time < 1e-6) {
-            ROS_ERROR("Replan execution time has passed, late by %f secs!", wait_time);
-            return false;
+            ROS_WARN("Replan execution time has passed, late by %f secs!", wait_time);
         }
-    }
 
-    arm->startTrajectory(goal_conveyor, false);
+        // Offset start time stamp and make trajectory start at 0
+        auto start_time = ros::Duration(traj->joint_trajectory.points[0].time_from_start);
+        goal_conveyor.trajectory.header.stamp += start_time;
+        for (auto& p : goal_conveyor.trajectory.points) {
+            p.time_from_start -= start_time;
+        }
+        printf("prev stamp %f new stamp %f\n", g_first_exec_stamp.toSec(), goal_conveyor.trajectory.header.stamp.toSec());
+        printf("traj start %f\n", start_time.toSec());
+    }
+    // arm->startTrajectory(goal_conveyor, false);
 
     //==========================================================//
     // wait until intercept time or until updated pose received //
@@ -1173,6 +1181,7 @@ int main(int argc, char* argv[])
 	    	rm.get(),
 	    	&object_grid,
 	    	&manip_grid,
+            start_state,
             object_velocity,
 	    	&params)) {
     	return 1;
@@ -1182,15 +1191,14 @@ int main(int argc, char* argv[])
     grasps.push_back(grasp_transform);
     // TODO: pass all grasps
 
-    // PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
-    // PlannerMode planner_mode = PlannerMode::CONST_TIME_REPLAN;
+    PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
-    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    // ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
-    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
+    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     bool ret_plan, ret_exec;
     double intercept_time;
@@ -1198,9 +1206,9 @@ int main(int argc, char* argv[])
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.43, 1.30, -1.483530}; //{0.50, 1.37, 1.134464}; // invalid path example
-    std::vector<double> object_state_old = {0.420000, 1.320000, 2.356194}; // INCONSISTENT GOAL
-    std::vector<double> object_state_new = {0.450000, 1.380000, 0.0}; // INCONSISTENT GOAL
+    std::vector<double> object_state = {0.40, 1.30, 0.000000}; //{0.50, 1.37, 1.134464}; // invalid path example
+    std::vector<double> object_state_old = {0.420000, 1.300000, 0.0}; // INCONSISTENT GOAL
+    std::vector<double> object_state_new = {0.450000, 1.300000, 1.5}; // INCONSISTENT GOAL
 
     moveit_msgs::RobotTrajectory traj;
 
@@ -1210,16 +1218,15 @@ int main(int argc, char* argv[])
 
     if (execution_mode != ExecutionMode::SIMULATION && planner_mode != PlannerMode::PREPROCESS) {
     // go home
-        arm.init();
-        gripper.init();
-        arm.startTrajectory(arm.armHomeTrajectory(start_state), true);
-        gripper.OpenGripper(true);
+        // arm.init();
+        // gripper.init();
+        // arm.startTrajectory(arm.armHomeTrajectory(start_state), true);
+        // gripper.OpenGripper(true);
     }
 
     start_state.joint_state.name.push_back("time");
     start_state.joint_state.position.push_back(0.0);
 
-    moveit_msgs::RobotState replan_state;
     while(ros::ok()) {
         // Wait for the object pose if using perception
         if (execution_mode == ExecutionMode::REAL_ROBOT_PERCEPTION) {
@@ -1249,32 +1256,26 @@ int main(int argc, char* argv[])
             double time_elapsed = g_time_current_estimate - g_time_first_estimate;
             printf("time elapsed since first pose received: %f\n", time_elapsed);
 
-            if (time_elapsed < 1e-6) {
-                object_state_old = object_state;
-            }
-            else {
-                replan_state = start_state;
-                replan_state.joint_state.velocity.resize(8);
-                // replan_state.joint_state.effort.resize(8);
-                object_state_new = object_state;
+            if (time_elapsed > 1e-6) {
+                start_state.joint_state.velocity.resize(8);
+                // start_state.joint_state.effort.resize(8);
                 double dist_moved = fabs(time_elapsed * object_velocity[1]);
-                object_state_new[1] += dist_moved;
+                object_state[1] += dist_moved;
 
                 // find the new start state
                 for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
                     if (traj.joint_trajectory.points[i].time_from_start.toSec() > time_elapsed + time_offset) {
                         for (size_t j = 0; j < 7; ++j) {
-                            replan_state.joint_state.position[j + 1] = traj.joint_trajectory.points[i].positions[j];
-                            replan_state.joint_state.velocity[j + 1] = traj.joint_trajectory.points[i].velocities[j];
-                            // replan_state.joint_state.effort[j + 1] = traj.joint_trajectory.points[i].accelerations[j];
+                            start_state.joint_state.position[j + 1] = traj.joint_trajectory.points[i].positions[j];
+                            start_state.joint_state.velocity[j + 1] = traj.joint_trajectory.points[i].velocities[j];
+                            // start_state.joint_state.effort[j + 1] = traj.joint_trajectory.points[i].accelerations[j];
                         }
-                        replan_state.joint_state.position[8] = traj.joint_trajectory.points[i].time_from_start.toSec();
+                        start_state.joint_state.position[8] = traj.joint_trajectory.points[i].time_from_start.toSec();
                         break;
                     }
                 }
 
-                SMPL_INFO("Replan from time: %f", replan_state.joint_state.position[8]);
-                planner_mode = PlannerMode::CONST_TIME_REPLAN;
+                SMPL_INFO("Replan from time: %f", start_state.joint_state.position[8]);
             }
         }
 
@@ -1286,19 +1287,6 @@ int main(int argc, char* argv[])
                         start_state,
                         grasps,
                         object_state,
-                        object_height,
-                        &traj,
-                        intercept_time);
-            break;
-        }
-        case PlannerMode::CONST_TIME_REPLAN:
-        {
-            ret_plan = QueryConstTimeReplanner(
-                        &conveyor_planner,
-                        replan_state,
-                        grasps,
-                        object_state_old,
-                        object_state_new,
                         object_height,
                         &traj,
                         intercept_time);
@@ -1371,10 +1359,6 @@ int main(int argc, char* argv[])
             }
         }
         g_request_active = false;
-        if (planner_mode = PlannerMode::CONST_TIME_REPLAN) {
-            SMPL_INFO("Switching back to CONST_TIME_PLAN mode");
-            planner_mode = PlannerMode::CONST_TIME_PLAN;
-        }
     }
 
     return 1;
