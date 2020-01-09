@@ -73,6 +73,14 @@ struct SingleJointTrajectory
     double max_acceleration;
 };
 
+struct PlanPathParams
+{
+	double allowed_time;
+	bool rc_constrained;
+	bool shortcut_prerc;
+	bool only_check_success;
+};
+
 struct ConveyorPlanner
 {
 	// checkers

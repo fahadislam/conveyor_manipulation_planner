@@ -179,6 +179,13 @@ bool ConveyorObjectLattice::saveStateToPathIdMap()
     boost::archive::text_oarchive oarch(ofs);
     oarch << m_state_to_pid;
 
+    // for (auto p : m_state_to_pid) {
+    //     RobotState state(p.first.size());
+    //     coordToState(p.first, state);
+    //     SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "        state: " << state);
+    //     SMPL_INFO("Path id %d", p.second);
+    // }
+
     ofs.close();
     return true;
 }

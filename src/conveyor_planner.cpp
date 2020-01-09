@@ -522,7 +522,7 @@ bool WritePath(
             traj.multi_dof_joint_trajectory.points.size());
     for (size_t widx = 0; widx < wp_count; ++widx) {
 
-        if (traj.joint_trajectory.points[widx].time_from_start.toSec() >= intercept_time) {
+        if (traj.joint_trajectory.points[widx].time_from_start.toSec() >= intercept_time + 1e-6) {
             continue;
         }
         // fill the complete robot state
@@ -842,14 +842,15 @@ bool IsPathValid(smpl::CollisionChecker* checker, const std::vector<smpl::RobotS
     return true;
 }
 
+#if 0
 static
 void ShortcutPath(
-	ConveyorPlanner* planner,
-	double intercept_time,
-	std::vector<smpl::RobotState>& path)
+    ConveyorPlanner* planner,
+    double intercept_time,
+    std::vector<smpl::RobotState>& path)
 {
     // shortcut path piece-wise:
-    // 		start -> intercept -> grasp -> lift
+    //      start -> intercept -> grasp -> lift
 
     std::vector<smpl::RobotState> path_preintercept;
     std::vector<smpl::RobotState> path_postintercept;
@@ -914,20 +915,93 @@ void ShortcutPath(
     //     SMPL_INFO_STREAM("waypoint: " << wp);
     // }
 }
+#endif
+
+static
+void ShortcutPath(
+	ConveyorPlanner* planner,
+	double intercept_time,
+	std::vector<smpl::RobotState>& path,
+    bool shortcut_prerc = true)
+{
+    // shortcut path piece-wise:
+    // 		start -> intercept -> grasp -> lift
+    
+    std::vector<smpl::RobotState> path_prerc;
+    std::vector<smpl::RobotState> path_postrc;
+    if (!shortcut_prerc) {
+        for (auto p : path) {
+            if (p.back() < planner->replan_cutoff_) {
+                path_prerc.push_back(p);
+            }
+            else {
+                path_postrc.push_back(p);
+            }
+        }
+        path_prerc.push_back(path_postrc[0]);
+        path = path_postrc;
+    }
+
+    std::vector<smpl::RobotState> path_preintercept;
+    std::vector<smpl::RobotState> path_postintercept;
+
+    auto lift_state = path.back();
+    path.pop_back();
+
+
+    for (auto p : path) {
+        if (p.back() < intercept_time) {
+            path_preintercept.push_back(p);
+        }
+        else {
+            path_postintercept.push_back(p);
+        }
+    }
+    path_preintercept.push_back(path_postintercept[0]);
+
+    path.clear();
+    ShortcutPath(planner->robot_model,
+            planner->manip_checker,
+            path_preintercept,
+            path,
+            smpl::ShortcutType::JOINT_SPACE);
+    path.pop_back();
+
+    std::vector<smpl::RobotState> path_postintercept_sc;
+    ShortcutPath(planner->robot_model,
+            planner->manip_checker,
+            path_postintercept,
+            path_postintercept_sc,
+            smpl::ShortcutType::JOINT_SPACE);
+
+    for (auto p : path_postintercept_sc) {
+        path.push_back(p);
+    }
+
+    if (!shortcut_prerc) {
+        for (auto p : path) {
+            path_prerc.push_back(p);
+        }
+        path = path_prerc;
+    }
+
+    path.push_back(lift_state);
+
+}
 
 static
 void PostProcessPath(
     ConveyorPlanner* planner,
     std::vector<smpl::RobotState>& path,
     double resolution,
-    double intercept_time)
+    double intercept_time,
+    bool shortcut_prerc)
 {
     ////////////////////
     // Shortcut Path  //
     ////////////////////
 
-    ShortcutPath(planner, intercept_time, path);
-
+    ShortcutPath(planner, intercept_time, path, shortcut_prerc);
     /////////////////////////////////////////////////////////
     // Profile/Interpolate path and convert to trajectory  //
     /////////////////////////////////////////////////////////
@@ -955,11 +1029,16 @@ bool PlanRobotPath(
 	ConveyorPlanner* planner,
 	const moveit_msgs::RobotState& start_state,
     const Eigen::Affine3d& object_pose,
-    double allowed_time,
     moveit_msgs::RobotTrajectory* trajectory,
     double& intercept_time,
-    bool postprocess = true)
+    PlanPathParams params)
 {
+//         bool check_replancutoff,
+//     bool shortcut_prerc,
+//     bool postprocess = true)
+    // allowed_time
+
+    // TEMPORARY: TODO: Get shit done
     bool preprocessing = true;
 
     //==============================================================================//
@@ -991,7 +1070,7 @@ bool PlanRobotPath(
     planner->egraph_manip_heuristic.updateGoal(goal);
     planner->manip_checker->inflateCollisionObject();
 
-    if (preprocessing) {
+    if (params.rc_constrained) {
         bool ret_cutoff = planner->egraph_manip_heuristic.isReplanCutoffBeforeShortcutNode(planner->replan_cutoff_);
         if (!ret_cutoff) {
             ROS_WARN("Replan cutoff is after the shortcut node");
@@ -1052,141 +1131,144 @@ bool PlanRobotPath(
     std::vector<int> solution_state_ids;
     
     int sol_cost;
-    planner->egraph_planner->m_allowed_expansions = allowed_time * 250;
+    planner->egraph_planner->m_allowed_expansions = params.allowed_time * 250;
     SMPL_INFO("Expansions bound: %d\n", planner->egraph_planner->m_allowed_expansions);
-    b_ret = planner->egraph_planner->replan(allowed_time, &solution_state_ids, &sol_cost);
+    b_ret = planner->egraph_planner->replan(params.allowed_time, &solution_state_ids, &sol_cost);
 
+    if (params.only_check_success) {
+        return b_ret;
+    }
 
     std::vector<smpl::RobotState> path;
     std::vector<smpl::RobotState> new_path;
-    if (postprocess) {
-        if (b_ret && (solution_state_ids.size() > 0)) {
-            SMPL_INFO_NAMED(CP_LOGGER, "Planning succeeded");
-            SMPL_INFO_NAMED(CP_LOGGER, "  Num Expansions (Initial): %d", planner->egraph_planner->get_n_expands_init_solution());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Num Expansions (Final): %d", planner->egraph_planner->get_n_expands());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Epsilon (Initial): %0.3f", planner->egraph_planner->get_initial_eps());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Epsilon (Final): %0.3f", planner->egraph_planner->get_solution_eps());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Time (Initial): %0.3f", planner->egraph_planner->get_initial_eps_planning_time());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Time (Final): %0.3f", planner->egraph_planner->get_final_eps_planning_time());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Path Length (states): %zu", solution_state_ids.size());
-            SMPL_INFO_NAMED(CP_LOGGER, "  Solution Cost: %d", sol_cost);
 
-            new_path.clear();
-            if (!planner->manip_graph.extractPath(solution_state_ids, new_path)) {
-                SMPL_ERROR("Failed to convert state id path to joint variable path");
-                return false;
-            }
+    if (b_ret && (solution_state_ids.size() > 0)) {
+        SMPL_INFO_NAMED(CP_LOGGER, "Planning succeeded");
+        SMPL_INFO_NAMED(CP_LOGGER, "  Num Expansions (Initial): %d", planner->egraph_planner->get_n_expands_init_solution());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Num Expansions (Final): %d", planner->egraph_planner->get_n_expands());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Epsilon (Initial): %0.3f", planner->egraph_planner->get_initial_eps());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Epsilon (Final): %0.3f", planner->egraph_planner->get_solution_eps());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Time (Initial): %0.3f", planner->egraph_planner->get_initial_eps_planning_time());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Time (Final): %0.3f", planner->egraph_planner->get_final_eps_planning_time());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Path Length (states): %zu", solution_state_ids.size());
+        SMPL_INFO_NAMED(CP_LOGGER, "  Solution Cost: %d", sol_cost);
+
+        new_path.clear();
+        if (!planner->manip_graph.extractPath(solution_state_ids, new_path)) {
+            SMPL_ERROR("Failed to convert state id path to joint variable path");
+            return false;
         }
-        else {
-            return b_ret;
-        }
-
-        intercept_time = planner->manip_graph.getInterceptTime(new_path);
-
-        //=========================================================
-        // If replan request then merge new path with current path
-        // If first plan request then use the new path as it is
-        //=========================================================
-
-        double resolution = 0.05;
-        PostProcessPath(planner, new_path, resolution, intercept_time);
-
-        if (!planner->current_path_.empty()) {
-            size_t cdx;
-            for (cdx = 0; cdx < planner->current_path_.size(); ++cdx) {
-                if (planner->current_path_[cdx].back() > planner->replan_cutoff_) {
-                    break;
-                }
-            }
-            size_t ndx;
-            double buffer = 0.0;
-            for (ndx = 0; ndx < new_path.size(); ++ndx) {
-                if (new_path[ndx].back() > planner->current_path_[cdx].back() + buffer) {
-                    break;
-                }
-            }
-
-            SMPL_INFO("Snapping from time %f to %f", planner->current_path_[cdx].back(), new_path[ndx].back());
-
-            // find path from planner->current_path_[cdx] to new_path[ndx];
-            // TODO: Use this common functio whereever
-            double max_time = 0.0;
-            double diff_time = new_path[ndx].back() - planner->current_path_[cdx].back(); 
-            for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
-                auto from_pos = planner->current_path_[cdx][j];
-                auto to_pos = new_path[ndx][j];
-                auto vel = planner->robot_model->velLimit(j);
-                if (vel <= 0.0) {
-                    continue;
-                }
-                auto t = 0.0;
-                if (planner->robot_model->isContinuous(j)) {
-                    t = smpl::angles::shortest_angle_dist(from_pos, to_pos) / vel;
-                } else {
-                    t = fabs(to_pos - from_pos) / vel;
-                }
-                max_time = std::max(max_time, t);
-            }
-
-            if (max_time > diff_time) {
-                ROS_ERROR("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
-                return false;
-            }
-
-            if (!planner->manip_checker->isStateToStateValid(planner->current_path_[cdx], new_path[ndx])) {
-                ROS_ERROR("Snap between the two paths is invalid");
-                return false;
-            }
-
-            // Combine paths
-            path.resize(new_path.size() - ndx + 1);  // +1 for planner->current_path_[cdx]
-            path[0] = planner->current_path_[cdx];
-            std::copy(new_path.begin() + ndx, new_path.end(), path.begin() + 1);
-
-            // PostProcessPath(planner, path, resolution, intercept_time);
-        }
-        else {
-            path = new_path;
-        }
-
-        printf("new path:\n");
-        for (const auto& wp : path) {
-            SMPL_INFO_STREAM("waypoint: " << wp);
-        }
-
-        //=============================================================================================
-        // NOTES:
-        // - No need to shortcut or interpolate the path before "last_replan_time" for const time
-        //   plan and replan queries
-        // - Only shortcut the entire path for preprocessing
-        // - Only interpolate path until last_replan_time
-        //=============================================================================================
-
-
-        // printf("Final path:\n");
-        // for (const auto& wp : path) {
-        //     SMPL_INFO_STREAM("waypoint: " << wp);
-        // }
-
-        auto to_check_path = path;
-        to_check_path.pop_back();
-        planner->manip_checker->deflateCollisionObject();
-        if (!IsPathValid(planner->manip_checker, to_check_path)) {
-            ROS_WARN("Path is invalid after interp");
-            // getchar();
-        }
-        planner->manip_checker->inflateCollisionObject();
-
-        // no need for joint_trajs anymore as we are not using cubic profiler
-
-        ConvertJointVariablePathToJointTrajectory(
-                planner->robot_model,
-                path,
-                planner->home_state_.joint_state.header.frame_id,
-                planner->home_state_.multi_dof_joint_state.header.frame_id,
-                start_state,
-                *trajectory);
     }
+    else {
+        return b_ret;
+    }
+
+    intercept_time = planner->manip_graph.getInterceptTime(new_path);
+
+    //=========================================================
+    // If replan request then merge new path with current path
+    // If first plan request then use the new path as it is
+    //=========================================================
+
+    double resolution = 0.05;
+    PostProcessPath(planner, new_path, resolution, intercept_time, params.shortcut_prerc);
+
+    if (!preprocessing && !planner->current_path_.empty()) {
+        size_t cdx;
+        for (cdx = 0; cdx < planner->current_path_.size(); ++cdx) {
+            if (planner->current_path_[cdx].back() > planner->replan_cutoff_) {
+                break;
+            }
+        }
+        size_t ndx;
+        double buffer = 0.0;
+        for (ndx = 0; ndx < new_path.size(); ++ndx) {
+            if (new_path[ndx].back() > planner->current_path_[cdx].back() + buffer) {
+                break;
+            }
+        }
+
+        SMPL_INFO("Snapping from time %f to %f", planner->current_path_[cdx].back(), new_path[ndx].back());
+
+        // find path from planner->current_path_[cdx] to new_path[ndx];
+        // TODO: Use this common function whereever
+        double max_time = 0.0;
+        double diff_time = new_path[ndx].back() - planner->current_path_[cdx].back(); 
+        for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
+            auto from_pos = planner->current_path_[cdx][j];
+            auto to_pos = new_path[ndx][j];
+            auto vel = planner->robot_model->velLimit(j);
+            if (vel <= 0.0) {
+                continue;
+            }
+            auto t = 0.0;
+            if (planner->robot_model->isContinuous(j)) {
+                t = smpl::angles::shortest_angle_dist(from_pos, to_pos) / vel;
+            } else {
+                t = fabs(to_pos - from_pos) / vel;
+            }
+            max_time = std::max(max_time, t);
+        }
+
+        if (max_time > diff_time) {
+            ROS_ERROR("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
+            return false;
+        }
+
+        if (!planner->manip_checker->isStateToStateValid(planner->current_path_[cdx], new_path[ndx])) {
+            ROS_ERROR("Snap between the two paths is invalid");
+            return false;
+        }
+
+        // Combine paths
+        path.resize(new_path.size() - ndx + 1);  // +1 for planner->current_path_[cdx]
+        path[0] = planner->current_path_[cdx];
+        std::copy(new_path.begin() + ndx, new_path.end(), path.begin() + 1);
+
+        // PostProcessPath(planner, path, resolution, intercept_time, params.shortcut_prerc);
+    }
+    else {
+        path = new_path;
+    }
+
+    // printf("new path:\n");
+    // for (const auto& wp : path) {
+    //     SMPL_INFO_STREAM("waypoint: " << wp);
+    // }
+
+    //=============================================================================================
+    // NOTES:
+    // - No need to shortcut or interpolate the path before "last_replan_time" for const time
+    //   plan and replan queries
+    // - Only shortcut the entire path for preprocessing
+    // - Only interpolate path until last_replan_time
+    //=============================================================================================
+
+
+    // printf("Final path:\n");
+    // for (const auto& wp : path) {
+    //     SMPL_INFO_STREAM("waypoint: " << wp);
+    // }
+
+    auto to_check_path = path;
+    to_check_path.pop_back();
+    planner->manip_checker->deflateCollisionObject();
+    if (!IsPathValid(planner->manip_checker, to_check_path)) {
+        ROS_WARN("Path is invalid after interp");
+        // getchar();
+    }
+    planner->manip_checker->inflateCollisionObject();
+
+    // no need for joint_trajs anymore as we are not using cubic profiler
+
+    ConvertJointVariablePathToJointTrajectory(
+            planner->robot_model,
+            path,
+            planner->home_state_.joint_state.header.frame_id,
+            planner->home_state_.multi_dof_joint_state.header.frame_id,
+            start_state,
+            *trajectory);
+
     planner->current_path_ = path;
 
     return b_ret;
@@ -1213,8 +1295,6 @@ bool PreprocessConveyorPlanner(
     const std::vector<Eigen::Affine3d>& grasps,
     double height)
 {
-	double allowed_time_scratch = 20;
-
 	// remove all stored data
 	auto sys_ret = system("exec rm -r /home/fislam/paths/*");
 
@@ -1231,6 +1311,7 @@ bool PreprocessConveyorPlanner(
     // - Tertminate preprocessing when there are no more uncovered states
 
 	int center_count = 0;
+    auto root_egraph_dir = "/home/fislam/paths/root/";
 	while(true) {
 
 	    ///////////////////////////////////////////////
@@ -1265,11 +1346,25 @@ bool PreprocessConveyorPlanner(
         planner->manip_graph.eraseExperienceGraph();
         planner->egraph_planner->force_planning_from_scratch_and_free_memory();
 
+        if (center_count != 0) {
+            planner->manip_graph.loadExperienceGraph(root_egraph_dir);
+        }
+
 	    moveit_msgs::RobotTrajectory traj;
 	    double intercept_time;
-	    if (!PlanRobotPath(planner, start_state, goal_pose, allowed_time_scratch, &traj, intercept_time)) {
+
+        PlanPathParams params;
+        params.allowed_time = 20;
+        params.rc_constrained = false;
+        params.shortcut_prerc = false;
+        params.only_check_success = false;
+        if (center_count == 0) {
+            params.shortcut_prerc = true;
+        }
+
+	    if (!PlanRobotPath(planner, start_state, goal_pose, &traj, intercept_time, params)) {
         	SMPL_INFO("Unable to plan to the center within time %f",
-        		allowed_time_scratch);
+        		params.allowed_time);
 
         	planner->hkey_dijkstra.markDirtyState(state_id);
         	planner->hkey_dijkstra.removeStateFromUncoveredList(state_id);
@@ -1278,8 +1373,12 @@ bool PreprocessConveyorPlanner(
 
 	    // write path to file
 	    auto egraph_dir = "/home/fislam/paths/" + std::to_string(center_count);
-	    auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
+        // auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
 	    WritePath(planner->robot_model, start_state, traj, egraph_dir, intercept_time);
+
+        if (center_count == 0) {
+            WritePath(planner->robot_model, start_state, traj, root_egraph_dir, planner->replan_cutoff_);
+        }
 
 	    //////////////////////////////////
 	    //     Reachability Search      //
@@ -1325,20 +1424,35 @@ bool PreprocessConveyorPlanner(
 
 	        moveit_msgs::RobotTrajectory traj;
 	        double intercept_time;
-	        if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_, &traj, intercept_time, iter == 0)) {
+
+            PlanPathParams params;
+            params.allowed_time = planner->time_bound_;
+            params.rc_constrained = true;
+            params.only_check_success = true;
+            if (iter == 0) {
+                params.rc_constrained = false;
+                params.only_check_success = false;
+                params.shortcut_prerc = true;
+            }
+	        if (!PlanRobotPath(planner, start_state, goal_pose, &traj, intercept_time, params)) {
+                //=========================================================================//
+                // dont need to mark state as dirty here, can just store the original path //
+                //=========================================================================//
 	        	SMPL_INFO("		Pose is NOT reachable");
 	        	SMPL_INFO("-----------------------------------------------------------\n\n\n");
 	        	if (iter == 0) {
 	        		planner->hkey_dijkstra.markDirtyState(state_id);
 	        		planner->hkey_dijkstra.removeStateFromUncoveredList(state_id);
+                    auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
 	        	}
 	        }
 	        else {
 	        	if (iter == 0) {
 				    // remove previous path and write path to file (to resolve mismatch)
 				    // issue because of interpolation)
-				    auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
-				    WritePath(planner->robot_model, start_state, traj, egraph_dir, intercept_time);
+				    // auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
+				    // WritePath(planner->robot_model, start_state, traj, egraph_dir, intercept_time);
+                    // printf("second\n"); getchar();
 				}
 	        	planner->hkey_dijkstra.removeStateFromDirtyList(state_id); // if dirty
 	        	planner->hkey_dijkstra.removeStateFromUncoveredList(state_id);
@@ -1402,7 +1516,12 @@ bool QueryConstTimePlanner(
     	return false;
 	}
 
-    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_ + 1e-2, trajectory, intercept_time)) {
+    PlanPathParams params;
+    params.allowed_time = planner->time_bound_ + 1e-3;
+    params.rc_constrained = false;
+    params.shortcut_prerc = true;
+    params.only_check_success = false;
+    if (!PlanRobotPath(planner, start_state, goal_pose, trajectory, intercept_time, params)) {
 		SMPL_INFO("Unable to plan to the center within time %f",
 		planner->time_bound_);
 		return false;
@@ -1420,7 +1539,6 @@ bool QueryNormalPlanner(
     moveit_msgs::RobotTrajectory* trajectory,
     double& intercept_time)
 {
-	double allowed_time = 1000.0;
 	auto object_state_grid = planner->object_graph.getDiscreteCenter(object_state);
 
 	SMPL_INFO("#######    Normal Planner: Query object state: %.2f %.2f %.2f    #######", 
@@ -1441,9 +1559,14 @@ bool QueryNormalPlanner(
     	return false;
 	}
 
-    if (!PlanRobotPath(planner, start_state, goal_pose, allowed_time, trajectory, intercept_time)) {
+    PlanPathParams params;
+    params.allowed_time = 1000.0;
+    params.rc_constrained = false;
+    params.shortcut_prerc = true;
+    params.only_check_success = false;
+    if (!PlanRobotPath(planner, start_state, goal_pose, trajectory, intercept_time, params)) {
 		SMPL_INFO("Unable to plan within allowed time %f",
-		allowed_time);
+		params.allowed_time);
 		return false;
 	}
 
@@ -1486,7 +1609,7 @@ bool QueryAllTestsPlanner(
 
 		printf("Path id is %d\n", path_id);
 
-	    auto object_pose = ComputeObjectPose(center_state, height);
+	    auto object_pose = ComputeObjectPose(object_state, height);
         auto goal_pose = object_pose * grasps[0].inverse();
 
 	    // update collision checker for the new object pose
@@ -1505,9 +1628,13 @@ bool QueryAllTestsPlanner(
 	    	return false;
 		}
 
-		moveit_msgs::RobotTrajectory trajectory;
+		moveit_msgs::RobotTrajectory traj;
 	    double intercept_time;
-	    if (!PlanRobotPath(planner, start_state, goal_pose, planner->time_bound_ + 1e-2, &trajectory, intercept_time, true)) {
+        PlanPathParams params;
+        params.allowed_time = planner->time_bound_ + 1e-3;
+        params.rc_constrained = false;
+        params.only_check_success = true;
+        if (!PlanRobotPath(planner, start_state, goal_pose, &traj, intercept_time, params)) {
 			SMPL_INFO("Unable to plan to the center within time %f",
 			planner->time_bound_);
 			getchar();

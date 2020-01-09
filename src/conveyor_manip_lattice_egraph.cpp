@@ -233,6 +233,9 @@ bool ConveyorManipLatticeEgraph::extractPath(
         return false;
     }
 
+    // for (const auto& wp : opath) {
+    //     SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  Path state: " << wp);
+    // }
     // we made it!
     path = std::move(opath);
     auto* vis_name = "goal_config";

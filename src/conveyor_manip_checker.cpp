@@ -395,7 +395,7 @@ auto ConveyorManipChecker::getCollisionModelVisualization(const smpl::RobotState
     smpl::RobotState state_positions(state.size() - 1);
     std::copy(state.begin(), state.begin() + state.size() - 1, state_positions.begin());
     auto ma_collision_model = parent->getCollisionModelVisualization(state_positions);  // updates spheres
-    ma_collision_model.clear();
+    // ma_collision_model.clear();
     updateGripperMeshesState();
 
     // Gripper mesh markers

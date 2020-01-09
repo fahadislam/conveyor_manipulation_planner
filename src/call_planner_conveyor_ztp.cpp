@@ -1191,14 +1191,14 @@ int main(int argc, char* argv[])
     grasps.push_back(grasp_transform);
     // TODO: pass all grasps
 
-    PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
+    // PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::PREPROCESS;
-    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
+    PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
-    // ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
-    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
+    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     bool ret_plan, ret_exec;
     double intercept_time;
@@ -1206,7 +1206,7 @@ int main(int argc, char* argv[])
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.40, 1.30, 0.000000}; //{0.50, 1.37, 1.134464}; // invalid path example
+    std::vector<double> object_state = {0.40, 1.30, 2.181662}; //{0.50, 1.37, 1.134464}; // invalid path example
     std::vector<double> object_state_old = {0.420000, 1.300000, 0.0}; // INCONSISTENT GOAL
     std::vector<double> object_state_new = {0.450000, 1.300000, 1.5}; // INCONSISTENT GOAL
 
