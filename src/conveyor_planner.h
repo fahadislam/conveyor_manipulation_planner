@@ -79,6 +79,7 @@ struct PlanPathParams
 	bool rc_constrained;
 	bool shortcut_prerc;
 	bool only_check_success;
+	std::string singleton_dir;
 };
 
 struct ConveyorPlanner
@@ -134,6 +135,9 @@ bool PreprocessConveyorPlanner(
     const moveit_msgs::RobotState& start_state,
     const std::vector<Eigen::Affine3d>& grasps,
     double height);
+
+bool CheckAllLatchings(
+    ConveyorPlanner* planner);
 
 bool QueryConstTimePlanner(
 	ConveyorPlanner* planner,

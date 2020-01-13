@@ -74,8 +74,8 @@ public:
         std::vector<int>* succs,
         std::vector<int>* costs) override;
 
-    void setPathId(int state_id, int path_id);
-    int getPathId(RobotState state);
+    void setPathId(int state_id, int path_id, bool singleton = false);
+    std::pair<int, bool> getPathId(RobotState state);
     bool saveStateToPathIdMap();
     bool loadStateToPathIdMap();
 
@@ -84,7 +84,7 @@ private:
     typedef ManipLatticeState StateKey2;
     typedef std::ValueHash<RobotCoord> StateHash2;
     typedef std::ValueEqual<RobotCoord> StateEqual2;
-    hash_map<RobotCoord, int, StateHash2, StateEqual2> m_state_to_pid;
+    hash_map<RobotCoord, std::pair<int, bool>, StateHash2, StateEqual2> m_state_to_pid;
     std::unordered_map<int, int> mm;
 };
 

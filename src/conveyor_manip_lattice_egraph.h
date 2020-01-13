@@ -55,6 +55,10 @@ public:
 
     bool loadExperienceGraph(const std::vector<std::string>& paths);
 
+    bool loadPath(
+        const std::string& filepath,
+        std::vector<RobotState>& path);
+
     void getExperienceGraphNodes(
         int state_id,
         std::vector<ExperienceGraph::node_id>& nodes) override;

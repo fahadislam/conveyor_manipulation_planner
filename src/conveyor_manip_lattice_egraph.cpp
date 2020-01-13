@@ -417,6 +417,35 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
     return true;
 }
 
+bool ConveyorManipLatticeEgraph::loadPath(
+    const std::string& filepath,
+    std::vector<RobotState>& path)
+{
+    SMPL_INFO("Load Experience Graph at %s", filepath.c_str());
+
+    boost::filesystem::path p(filepath);
+    if (!boost::filesystem::is_directory(p)) {
+        SMPL_ERROR("'%s' is not a directory", filepath.c_str());
+        return false;
+    }
+
+    for (auto dit = boost::filesystem::directory_iterator(p);
+        dit != boost::filesystem::directory_iterator(); ++dit)
+    {
+        auto& filepath = dit->path().generic_string();
+        if (!parseExperienceGraphFile(filepath, path)) {
+            continue;
+        }
+
+        if (path.empty()) {
+            continue;
+        }
+    }
+
+    SMPL_INFO("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
+    return true;
+}
+
 void ConveyorManipLatticeEgraph::getExperienceGraphNodes(
     int state_id,
     std::vector<ExperienceGraph::node_id>& nodes)

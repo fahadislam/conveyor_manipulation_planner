@@ -153,15 +153,14 @@ void ConveyorObjectLattice::GetSuccs(
 }
 
 
-void ConveyorObjectLattice::setPathId(int state_id, int path_id)
+void ConveyorObjectLattice::setPathId(int state_id, int path_id, bool singleton)
 {
     auto entry = getHashEntry(state_id);
-    m_state_to_pid[entry->coord] = path_id;
-
+    m_state_to_pid[entry->coord] = std::pair<int, bool>(path_id, singleton);
     SMPL_INFO_NAMED(G_LOG, "  state id: %d,     path id: %d", state_id, path_id);
 }
 
-int ConveyorObjectLattice::getPathId(RobotState state)
+std::pair<int, bool> ConveyorObjectLattice::getPathId(RobotState state)
 {
     RobotCoord coord(robot()->jointVariableCount());
     stateToCoord(state, coord);
@@ -170,7 +169,7 @@ int ConveyorObjectLattice::getPathId(RobotState state)
     if (it != m_state_to_pid.end()) {
         return it->second;
     }
-    return -1;
+    return std::pair<int, bool>(-1,false);
 }
 
 bool ConveyorObjectLattice::saveStateToPathIdMap()
