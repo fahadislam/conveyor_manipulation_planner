@@ -74,18 +74,20 @@ public:
         std::vector<int>* succs,
         std::vector<int>* costs) override;
 
-    void setPathId(int state_id, int path_id, bool singleton = false);
-    std::pair<int, bool> getPathId(RobotState state);
-    bool saveStateToPathIdMap();
-    bool loadStateToPathIdMap();
+    void setPathId(int start_id, int state_id, int path_id, bool singleton = false);
+    std::pair<int, bool> getPathId(int start_id, const RobotState& state);
+    bool saveStateToPathIdMap(std::string filepath);
+    bool loadStateToPathIdMap(std::string filepath);
 
 private:
 
     typedef ManipLatticeState StateKey2;
     typedef std::ValueHash<RobotCoord> StateHash2;
     typedef std::ValueEqual<RobotCoord> StateEqual2;
-    hash_map<RobotCoord, std::pair<int, bool>, StateHash2, StateEqual2> m_state_to_pid;
-    std::unordered_map<int, int> mm;
+    typedef hash_map<RobotCoord, std::pair<int, bool>, StateHash2, StateEqual2> LookupTable;
+    std::vector<LookupTable> m_state_to_pid;
+
+    // LookupTable m_state_to_pid_home;
 };
 
 } // namespace smpl

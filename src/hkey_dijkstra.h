@@ -135,12 +135,32 @@ public:
     void setBoundExpansions(bool bound) { m_time_params.bounded = bound; }
     bool boundExpansions() const { return m_time_params.bounded; }
 
-    int sampleObjectState();
+    int sampleObjectState(int subregion_id);
     void markDirtyState(int state_id);
     int getNextStateId();
     void removeStateFromUncoveredList(int state_id);
     void removeStateFromDirtyList(int state_id);
+    void addStateToSubregion(int subregion_id, int state_id);
     bool reinit_search();
+
+    void setUncoveredStates(const std::vector<int>& state_ids);
+    auto getUncoveredStates() -> std::vector<int>;
+    auto getRemainingStates() -> std::vector<int>;
+    auto getCoveredStates() -> std::vector<int>;
+
+    void subtractStates(
+        std::vector<int>& from_state_ids,
+        const std::vector<int>& state_ids);
+
+    void addStates(
+        std::vector<int>& to_state_ids,
+        const std::vector<int>& state_ids);
+
+    auto getSubregion(int start_id, int subregion_id) -> std::vector<int>;
+
+    void appendSubregions();
+    // void saveSubregion(int subregion_id, std::string path);
+
     int replan(
         const TimeParameters &params,
         std::vector<int>* solution,
@@ -210,7 +230,11 @@ private:
 
     std::vector<SearchState*> m_states;
     std::vector<int> m_uc_states;
+    std::vector<int> m_init_uc_states;
     std::vector<int> m_dirty_states;
+
+    std::vector<std::vector<int>> m_subregions;
+    std::vector<std::vector<std::vector<int>>> m_goal_regions;
 
     int m_start_state_id;   // graph state id for the start state
     int m_goal_state_id;    // graph state id for the goal state

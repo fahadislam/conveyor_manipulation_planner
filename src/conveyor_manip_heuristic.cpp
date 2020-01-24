@@ -61,11 +61,11 @@ bool ConveyorManipHeuristic::init(RobotPlanningSpace* space)
 
     m_point_ext = space->getExtension<PointProjectionExtension>();
     if (m_point_ext) {
-        SMPL_INFO_NAMED(LOG, "Got Point Projection Extension!");
+        SMPL_DEBUG_NAMED(LOG, "Got Point Projection Extension!");
     }
     m_pose_ext = space->getExtension<PoseProjectionExtension>();
     if (m_pose_ext) {
-        SMPL_INFO_NAMED(LOG, "Got Pose Projection Extension!");
+        SMPL_DEBUG_NAMED(LOG, "Got Pose Projection Extension!");
     }
     if (!m_pose_ext && !m_point_ext) {
         SMPL_WARN_NAMED(LOG, "ConveyorManipHeuristic recommends PointProjectionExtension or PoseProjectionExtension");
@@ -149,8 +149,8 @@ double GetTimeToIntercept(
     auto a = j * std::sin(CAB);
     auto b = j * std::sin(ABC);
  
-    if (b > 100000) {
-        return 100000;
+    if (b > 1e6) {
+        return 1e6;
     }
  
     auto t = b / target_vel.norm();
@@ -176,6 +176,9 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
     Eigen::Vector3d object_velocity;
     std::tie(object_pose, object_velocity) = m_ecos->extractConveyorObjectState(state.back());
 
+    // if (object_pose.translation().y() < -0.2) {
+    //     return 1e6;
+    // }
     if (m_pose_ext) {
         Affine3 p;
         if (!m_pose_ext->projectToPose(state_id, p)) {

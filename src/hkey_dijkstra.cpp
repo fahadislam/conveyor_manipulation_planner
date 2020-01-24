@@ -41,6 +41,13 @@
 #include <smpl/time.h>
 #include <smpl/console/console.h>
 
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/serialization/unordered_map.hpp>
+#include <boost/serialization/vector.hpp>
+#include <fstream>
+#include <iostream>
+
 namespace smpl {
 
 static const char* SLOG = "search";
@@ -137,6 +144,77 @@ bool HKeyDijkstra::reinit_search()
     m_last_start_state_id = m_start_state_id;
 
     return true;
+}
+
+void HKeyDijkstra::setUncoveredStates(const std::vector<int>& state_ids)
+{
+    m_uc_states = state_ids;
+    m_init_uc_states = m_uc_states;
+    m_dirty_states.clear();
+    for (auto ss : m_states) {
+        ss->covered = false;
+        ss->dirty = false;
+    }
+    m_subregions.clear();
+}
+
+auto HKeyDijkstra::getUncoveredStates()
+    -> std::vector<int>
+{
+    return m_uc_states;
+}
+
+auto HKeyDijkstra::getRemainingStates()
+    -> std::vector<int>
+{
+    return m_dirty_states;
+}
+
+auto HKeyDijkstra::getCoveredStates()
+    -> std::vector<int>
+{
+    auto covered_states = m_init_uc_states;
+    subtractStates(covered_states, m_dirty_states);
+    return covered_states;
+}
+
+void HKeyDijkstra::subtractStates(
+    std::vector<int>& from_state_ids,
+    const std::vector<int>& state_ids)
+{
+    for (const int id : state_ids) {
+        auto it = std::find(from_state_ids.begin(), from_state_ids.end(), id);
+        if (it != from_state_ids.end()) {
+            from_state_ids.erase(it);
+        }
+    }
+}
+
+void HKeyDijkstra::addStates(
+    std::vector<int>& to_state_ids,
+    const std::vector<int>& state_ids)
+{
+    for (const int id : state_ids) {
+        auto it = std::find(to_state_ids.begin(), to_state_ids.end(), id);
+        if (it == to_state_ids.end()) {
+            to_state_ids.push_back(id);
+        }
+    }
+}
+
+auto HKeyDijkstra::getSubregion(int start_id, int subregion_id)
+    -> std::vector<int>
+{
+    // printf("start_id %d, subregion_id %d, m_goal_regions.size() %zu, subregion.size() %zu\n",
+    //     start_id, subregion_id, m_goal_regions.size(), m_goal_regions[start_id].size());
+    assert(start_id < m_goal_regions.size());
+    assert(subregion_id < m_goal_regions[start_id].size());
+    return m_goal_regions[start_id][subregion_id];
+}
+
+void HKeyDijkstra::appendSubregions()
+{
+    m_goal_regions.push_back(std::move(m_subregions));
 }
 
 int HKeyDijkstra::replan(
@@ -514,32 +592,46 @@ bool HKeyDijkstra::timedOut(
 }
 
 
-int HKeyDijkstra::sampleObjectState()
+int HKeyDijkstra::sampleObjectState(int subregion_id)
 {
-    printf("\n\n\n");
-    SMPL_INFO("##############    Uncovered: %zu, Total: %zu, Dirty: %zu    #############",
-            m_uc_states.size(), m_states.size(), m_dirty_states.size());
+    // printf("\n\n\n");
+    // SMPL_INFO("##############    Uncovered: %zu, Total: %zu, Dirty: %zu    #############",
+    //         m_uc_states.size(), m_init_uc_states.size(), m_dirty_states.size());
 
     if (m_uc_states.empty()) {
-        SMPL_INFO("All non-dirty states covered, remaining dirty states %zu",
+        SMPL_DEBUG("All non-dirty states covered, remaining dirty states %zu",
                     m_dirty_states.size());
         return -1;
     }
-    else if (m_uc_states.size() == 1) {
-        return m_uc_states[0];
-    }
 
-    int idx = (std::rand() % (m_uc_states.size() - 1)) + 1;
+    // else if (m_uc_states.size() == 1) {
+    //     return m_uc_states[0];
+    // }
+
+    int idx = (std::rand() % (m_uc_states.size()));
 
     auto state = getSearchState(m_uc_states[idx]);
     assert(state->covered);
+
+    // to take care of the case when the sampled object
+    // state turns out to be dirty
+    // we dont want to add an extra subregion
+
+    assert(subregion_id == m_subregions.size()
+        || subregion_id == m_subregions.size() - 1);
+    if (subregion_id == m_subregions.size()) {
+        std::vector<int> sr;
+        m_subregions.push_back(sr);
+    }
+
+    // printf("Num subregions: %zu\n", m_subregions.size());
 
     return m_uc_states[idx];
 }
 
 void HKeyDijkstra::markDirtyState(int state_id)
 {
-    SMPL_INFO("Marking state %d as dirty", state_id);
+    SMPL_DEBUG("Marking state %d as dirty", state_id);
     auto state = getSearchState(state_id);
     assert(!state->dirty);
     state->dirty = true;
@@ -548,16 +640,16 @@ void HKeyDijkstra::markDirtyState(int state_id)
 
 int HKeyDijkstra::getNextStateId()
 {
-    SMPL_INFO("     Uncovered: %zu, Total %zu, Dirty %zu, Expands: %d, Open: %zu\n ",
-            m_uc_states.size(), m_states.size(), m_dirty_states.size(), m_expand_count, m_open.size());
+    // SMPL_INFO("     Uncovered: %zu, Total %zu, Dirty %zu, Expands: %d, Open: %zu\n ",
+    //         m_uc_states.size(), m_init_uc_states.size(), m_dirty_states.size(), m_expand_count, m_open.size());
 
     if (m_open.empty()) {
-        SMPL_INFO("Open list got empty");
+        SMPL_DEBUG("Open list got empty");
         return -1;
     }
 
     if (m_uc_states.empty()) {
-        SMPL_INFO("No more uncovered states");
+        SMPL_DEBUG("No more uncovered states");
         return -1;
     }
 
@@ -589,12 +681,15 @@ void HKeyDijkstra::removeStateFromUncoveredList(int state_id)
 {
     auto state = getSearchState(state_id);
     if (!state->covered) {
-        SMPL_INFO("Removing state %d from UC list\n", state_id);
+        SMPL_DEBUG("Removing state %d from UC list\n", state_id);
         auto it = std::find(m_uc_states.begin(), m_uc_states.end(), state_id);
         assert(it != m_uc_states.end());
         state->covered = true;
         m_uc_states.erase(it);
     }
+    SMPL_INFO("     Uncovered: %zu, Total %zu, Dirty %zu, Expands: %d\n ",
+            m_uc_states.size(), m_init_uc_states.size(), m_dirty_states.size(), m_expand_count);
+
     return;
 }
 
@@ -602,13 +697,23 @@ void HKeyDijkstra::removeStateFromDirtyList(int state_id)
 {
     auto state = getSearchState(state_id);
     if (state->dirty) {
-        SMPL_INFO("Removing state %d from Dirty list\n", state_id);
+        SMPL_DEBUG("Removing state %d from Dirty list\n", state_id);
         state->dirty = false;
         auto it = std::find(m_dirty_states.begin(), m_dirty_states.end(), state_id);
         assert(it != m_dirty_states.end());
         m_dirty_states.erase(it);
     }
     return;
+}
+
+void HKeyDijkstra::addStateToSubregion(int subregion_id, int state_id)
+{
+    // state covered and not dirty, then add to subregion
+    assert(subregion_id == m_subregions.size() - 1);
+    auto state = getSearchState(state_id);
+    if (!state->dirty) {
+        m_subregions[subregion_id].push_back(state_id);
+    }
 }
 
 // Expand states to improve the current solution until a solution within the
@@ -683,7 +788,10 @@ void HKeyDijkstra::expand(SearchState* s)
                 if (m_open.contains(succ_state)) {
                     m_open.decrease(succ_state);
                 } else {
-                    m_open.push(succ_state);
+                    auto it = std::find(m_uc_states.begin(), m_uc_states.end(), succ_state_id);
+                    if(it != m_uc_states.end()) {
+                        m_open.push(succ_state);
+                    }
                 }
             } else if (!succ_state->incons) {
                 m_incons.push_back(succ_state);

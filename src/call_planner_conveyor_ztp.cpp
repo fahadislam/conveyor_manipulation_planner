@@ -79,18 +79,26 @@ using FollowJointTrajectoryActionClient =
 
 std::unique_ptr<tf::TransformListener> g_listener;
 geometry_msgs::PoseStamped g_pose_msg;
+geometry_msgs::PoseStamped g_first_msg;
+
 
 bool g_request_active = false;
 double g_time_first_estimate = 0.0;
 double g_time_current_estimate = 0.0;
 double g_time_perception = 0.0;
+int g_last_seq = 0;
+double g_time_to_mid = 0.0;
 
 
 enum  PlannerMode
 {
     NORMAL_QUERY = 0,
-    CONST_TIME_PLAN,
-    ALL_TESTS_QUERY,
+    CONST_TIME_QUERY,
+    RANDOM_TESTS_CONST_TIME_REPLAN_QUERY,
+    ALL_TESTS_CONST_TIME_QUERY,
+    ALL_TESTS_NORMAL_QUERY,
+    RANDOM_TESTS_CONST_TIME_QUERY,
+    RANDOM_TESTS_NORMAL_QUERY,
     PREPROCESS
 };
 
@@ -158,7 +166,7 @@ bool GripperMachine::CloseGripper(bool wait)
 
 class RobotArm
 {
-private:
+public:
     std::unique_ptr<FollowJointTrajectoryActionClient> traj_client_;
 
 public:
@@ -498,6 +506,8 @@ struct PlannerConfig
     double origin_y;
     double size_x;
     double size_y;
+    double interp_resolution;
+    double replan_resolution;
     double time_bound;
     double buffer_time;
     double replan_cutoff;
@@ -596,6 +606,16 @@ bool ReadPlannerConfig(const ros::NodeHandle &nh, PlannerConfig &config)
         return false;
     }
 
+    if (!nh.getParam("interp_resolution", config.interp_resolution)) {
+        ROS_ERROR("Failed to read param 'interp_resolution' from the param server");
+        return false;
+    }
+
+    if (!nh.getParam("replan_resolution", config.replan_resolution)) {
+        ROS_ERROR("Failed to read param 'replan_resolution' from the param server");
+        return false;
+    }
+
     if (!nh.getParam("time_bound", config.time_bound)) {
         ROS_ERROR("Failed to read param 'time_bound' from the param server");
         return false;
@@ -655,20 +675,25 @@ void DopePoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     ROS_INFO("Dope pose callback!!");
     g_pose_msg = *msg;
     g_time_current_estimate = g_pose_msg.header.stamp.toSec();
-    g_time_perception = ros::Time::now().toSec() - g_time_current_estimate;
-    if (!g_request_active) {
-        g_time_first_estimate = g_time_current_estimate;
-    }
-    g_request_active = true;
+    // g_time_perception = ros::Time::now().toSec() - g_time_current_estimate;
+    g_time_perception = 0.2;
+    // if (!g_request_active) {
+    //     g_time_first_estimate = g_time_current_estimate;
+    //     g_first_msg = g_pose_msg;
+    // }
+    // g_request_active = true;
 }
 
 bool GetNewObjectGoal(std::vector<double>& object_pose)
 {
-    while (ros::ok() && !g_request_active) {
+    while (ros::ok() && g_pose_msg.header.seq == g_last_seq) {
         ros::Duration(0.001).sleep();
     }
+
+    g_last_seq = g_pose_msg.header.seq;
+
     std::string frame_id = "base_footprint";
-    if (!g_listener->waitForTransform(frame_id, g_pose_msg.header.frame_id, ros::Time(0), ros::Duration(10.0))) {
+    if (!g_listener->waitForTransform(frame_id, g_pose_msg.header.frame_id, ros::Time(0), ros::Duration(1.0))) {
         ROS_WARN("Transform not available after waiting");
         return false;
     }
@@ -720,6 +745,7 @@ void AnimatePath(
     }
 }
 
+int count = 0;
 bool PickupObject(
     moveit_msgs::RobotTrajectory* traj,
     double intercept_time,
@@ -759,10 +785,38 @@ bool PickupObject(
         for (auto& p : goal_conveyor.trajectory.points) {
             p.time_from_start -= start_time;
         }
-        printf("prev stamp %f new stamp %f\n", g_first_exec_stamp.toSec(), goal_conveyor.trajectory.header.stamp.toSec());
-        printf("traj start %f\n", start_time.toSec());
+        // printf("prev stamp %f new stamp %f\n", g_first_exec_stamp.toSec(), goal_conveyor.trajectory.header.stamp.toSec());
+        // printf("traj start %f\n", start_time.toSec());
     }
-    // arm->startTrajectory(goal_conveyor, false);
+#if 0
+    goal_conveyor.goal_time_tolerance = ros::Duration(0.05);
+    goal_conveyor.goal_tolerance.resize(7);
+    for (int i = 0; i < 7; ++i) {
+        goal_conveyor.goal_tolerance[i].position = 0.05;
+    }
+
+    goal_conveyor.goal_tolerance[0].name = "r_shoulder_pan_joint";
+    goal_conveyor.goal_tolerance[1].name = "r_shoulder_lift_joint";
+    goal_conveyor.goal_tolerance[2].name = "r_upper_arm_roll_joint";
+    goal_conveyor.goal_tolerance[3].name = "r_elbow_flex_joint";
+    goal_conveyor.goal_tolerance[4].name = "r_forearm_roll_joint";
+    goal_conveyor.goal_tolerance[5].name = "r_wrist_flex_joint";
+    goal_conveyor.goal_tolerance[6].name = "r_wrist_roll_joint";
+
+    goal_conveyor.path_tolerance.resize(7);
+    for (int i = 0; i < 7; ++i) {
+        goal_conveyor.path_tolerance[i].position = 0.05;
+    }
+    goal_conveyor.path_tolerance[0].name = "r_shoulder_pan_joint";
+    goal_conveyor.path_tolerance[1].name = "r_shoulder_lift_joint";
+    goal_conveyor.path_tolerance[2].name = "r_upper_arm_roll_joint";
+    goal_conveyor.path_tolerance[3].name = "r_elbow_flex_joint";
+    goal_conveyor.path_tolerance[4].name = "r_forearm_roll_joint";
+    goal_conveyor.path_tolerance[5].name = "r_wrist_flex_joint";
+    goal_conveyor.path_tolerance[6].name = "r_wrist_roll_joint";
+#endif
+    arm->startTrajectory(goal_conveyor, false);
+    // getchar();
 
     //==========================================================//
     // wait until intercept time or until updated pose received //
@@ -776,8 +830,9 @@ bool PickupObject(
         if (elapsed_time.toSec() > intercept_time) {    // time to intercept
             break;
         }
-        if (pose_time_since > 1e-6) {   // updated pose_out
+        if (pose_time_since > 1e-6 /* && count <=2*/) {   // updated pose_out
             ROS_WARN("New pose received; returning");
+            count++;
             return false;
         }
         ros::Duration(0.001).sleep();
@@ -787,10 +842,10 @@ bool PickupObject(
     ROS_INFO("Closing gripper");
     gripper->CloseGripper(true);
 
-    // Go back to home configuration
-    ROS_INFO("Going back to home configuration");
-    arm->startTrajectory(arm->armHomeTrajectory(start_state), true);
-    gripper->OpenGripper(true);
+    // // Go back to home configuration
+    // ROS_INFO("Going back to home configuration");
+    // arm->startTrajectory(arm->armHomeTrajectory(start_state), true);
+    // gripper->OpenGripper(true);
     return true;
 }
 
@@ -826,6 +881,8 @@ bool ExecutePickup(
     GripperMachine *gripper,
     RobotArm* arm)
 {
+    // AnimatePath(manip_cchecker, traj);
+    //     return true;
     switch (execution_mode) {
     case ExecutionMode::SIMULATION:
     {
@@ -852,7 +909,7 @@ int main(int argc, char* argv[])
 
     g_listener.reset(new tf::TransformListener);
 
-    ros::Subscriber sub_dope = nh.subscribe("/dope/pose_sugar", 1000, DopePoseCallback);
+    ros::Subscriber sub_dope = nh.subscribe("/dope/pose_mustard", 1000, DopePoseCallback);
 
     ros::AsyncSpinner spinner(2);
     spinner.start();
@@ -937,6 +994,10 @@ int main(int argc, char* argv[])
         ph.param("conveyor_object/box_params/size_x", size_x, 0.0);
         ph.param("conveyor_object/box_params/size_y", size_y, 0.0);
         ph.param("conveyor_object/box_params/size_z", size_z, 0.0);
+        double inflation = 1.2;
+        size_x *= inflation;
+        size_y *= inflation;
+        size_z *= inflation;
         collision_shape = smpl::make_unique<smpl::collision::BoxShape>(
                 size_x,
                 size_y,
@@ -1133,6 +1194,8 @@ int main(int argc, char* argv[])
     params.addParam("origin_y", planning_config.origin_y);
     params.addParam("size_x", planning_config.size_x);
     params.addParam("size_y", planning_config.size_y);
+    params.addParam("interp_resolution", planning_config.interp_resolution);
+    params.addParam("replan_resolution", planning_config.replan_resolution);
     params.addParam("time_bound", planning_config.time_bound);
     params.addParam("buffer_time", planning_config.buffer_time);
     params.addParam("replan_cutoff", planning_config.replan_cutoff);
@@ -1167,65 +1230,76 @@ int main(int argc, char* argv[])
     //  Create Bounds Checker
     ConveyorBoundsChecker object_bounds_checker(&object_grid);
 
+    // Set Mode
+
+    // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
+    // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY;
+    // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
+    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_CONST_TIME_QUERY;
+    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
+    // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
+    // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_QUERY;
+
+    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
+    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     //////////////////////////////////////
     //   Initialize Conveyor Planner    //
     //////////////////////////////////////
 
     ConveyorPlanner conveyor_planner;
+
     if (!Init(
-			&conveyor_planner,
-	    	&object_bounds_checker,
-	    	&manip_cchecker,
-	    	&object_model,
-	    	rm.get(),
-	    	&object_grid,
-	    	&manip_grid,
+            &conveyor_planner,
+            &object_bounds_checker,
+            &manip_cchecker,
+            &object_model,
+            rm.get(),
+            &object_grid,
+            &manip_grid,
             start_state,
             object_velocity,
-	    	&params)) {
-    	return 1;
+            &params,
+            planner_mode == PlannerMode::PREPROCESS)) {
+        return 1;
     }
 
     std::vector<Eigen::Affine3d> grasps;
     grasps.push_back(grasp_transform);
     // TODO: pass all grasps
 
-    // PlannerMode planner_mode = PlannerMode::CONST_TIME_PLAN;
-    // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
-    PlannerMode planner_mode = PlannerMode::ALL_TESTS_QUERY;
 
-    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
-    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
-    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
-
-    bool ret_plan, ret_exec;
-    double intercept_time;
-    double time_offset;
+    bool ret_plan = false;
+    bool ret_exec = false;
+    double intercept_time = 0.0;
+    double time_offset = 0.0;
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.40, 1.30, 2.181662}; //{0.50, 1.37, 1.134464}; // invalid path example
-    std::vector<double> object_state_old = {0.420000, 1.300000, 0.0}; // INCONSISTENT GOAL
-    std::vector<double> object_state_new = {0.450000, 1.300000, 1.5}; // INCONSISTENT GOAL
+    std::vector<double> object_state = {0.40, 1.25, -2.443461 }; //{0.50, 1.37, 1.134464}; // invalid path example
 
     moveit_msgs::RobotTrajectory traj;
 
+    // CheckAllLatchings(
+    // &conveyor_planner);
+    // return 1;
     // Init gripper and traj clients
     RobotArm arm;
     GripperMachine gripper;
 
     if (execution_mode != ExecutionMode::SIMULATION && planner_mode != PlannerMode::PREPROCESS) {
     // go home
-        // arm.init();
-        // gripper.init();
-        // arm.startTrajectory(arm.armHomeTrajectory(start_state), true);
-        // gripper.OpenGripper(true);
+        arm.init();
+        gripper.init();
+        arm.startTrajectory(arm.armHomeTrajectory(start_state), true);
+        gripper.OpenGripper(true);
     }
 
     start_state.joint_state.name.push_back("time");
     start_state.joint_state.position.push_back(0.0);
+    auto home_state = start_state;
 
     while(ros::ok()) {
         // Wait for the object pose if using perception
@@ -1234,6 +1308,7 @@ int main(int argc, char* argv[])
             object_state.resize(3);
             if (!GetNewObjectGoal(object_state)) {
                 ROS_ERROR("Failed to find object goal pose");
+                continue;
             }
 
             //=============================================================================//
@@ -1241,26 +1316,67 @@ int main(int argc, char* argv[])
             //=============================================================================//
 
             time_offset = g_time_perception + ( planning_config.time_bound + planning_config.buffer_time );
-            printf("time offset %f + %f = %f\n",
+            printf("Time offset: %f (Perception) + %f (Planning) = %f\n",
                     g_time_perception, planning_config.time_bound + planning_config.buffer_time, time_offset);
 
+
             object_state[1] += time_offset * object_velocity[1];
+
+            // CHECK FOR FIRST REQUEST
+            //=====================================Mid goal region offset
             
-            //=========================================================================================//
-            // time_elapsed is the time duration between the first and current estimate of the objects //
-            // 1. if time_elapsed = 0 it means it is the first estimate of the object                  //
-            // 2. if time_elapsed > 0 it means it is a subsequent estimate and we need to replan       //
-            //      - in this case we compute the new object pose in retrospect                        //
-            //=========================================================================================//
+            double mid_region_y = 1.15;
+            if (!g_request_active) {
+                if (object_state[1] < mid_region_y /* || object_state[1] >= 1.3*/) {
+                    ROS_WARN("Object 'y' is passed the Region Mid: y: %f, mid: %f", object_state[1], mid_region_y);
+                    continue;
+                }
 
-            double time_elapsed = g_time_current_estimate - g_time_first_estimate;
-            printf("time elapsed since first pose received: %f\n", time_elapsed);
+                g_time_first_estimate = g_time_current_estimate;
+                g_first_msg = g_pose_msg;   // unused
 
-            if (time_elapsed > 1e-6) {
+                double dist_to_mid = object_state[1] - mid_region_y;
+                printf("Got First Pose Estimate at 'y': %f dist to mid: %f\n", object_state[1], dist_to_mid);
+                // if (dist_to_mid < 0.0) {
+                //     ROS_ERROR("Object detected after Mid Region, skipping!");
+                //     continue;
+                // }
+                g_time_to_mid = fabs(dist_to_mid / object_velocity[1]);
+                object_state[1] += g_time_to_mid * object_velocity[1];
+                time_offset += g_time_to_mid;
+                g_request_active = true;
+                printf("Total time offset after adding time to mid: %f\n", time_offset);
+            }
+            //======================================
+            else {
+                //=========================================================================================//
+                // time_elapsed is the time duration between the first and current estimate of the objects //
+                // 1. if time_elapsed = 0 it means it is the first estimate of the object                  //
+                // 2. if time_elapsed > 0 it means it is a subsequent estimate and we need to replan       //
+                //      - in this case we compute the new object pose in retrospect                        //
+                //=========================================================================================//
+
+                double time_elapsed = g_time_current_estimate - g_time_first_estimate - g_time_to_mid;
+                printf("Time elapsed since mid: %f\n", time_elapsed);
+
                 start_state.joint_state.velocity.resize(8);
-                // start_state.joint_state.effort.resize(8);
-                double dist_moved = fabs(time_elapsed * object_velocity[1]);
+
+                double dist_moved = fabs( (time_elapsed * object_velocity[1]) );
                 object_state[1] += dist_moved;
+
+
+                auto frame_id = "base_footprint";
+                geometry_msgs::PoseStamped pose_out_first, pose_out_current;
+                TryHardTransformPose(frame_id, g_first_msg, pose_out_first);
+                TryHardTransformPose(frame_id, g_pose_msg, pose_out_current);
+
+                // Only for verification
+                double dist2 = fabs(pose_out_current.pose.position.y - pose_out_first.pose.position.y);
+                double dist_to_mid = g_time_to_mid * object_velocity[1];
+                printf("Distances projected vs actual: %f %f Diff: %f\n", dist_moved, dist2, fabs(dist_moved - dist_to_mid - dist2));
+
+
+
 
                 // find the new start state
                 for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
@@ -1277,10 +1393,15 @@ int main(int argc, char* argv[])
 
                 SMPL_INFO("Replan from time: %f", start_state.joint_state.position[8]);
             }
+            
+
+            // if (g_request_active) {
+            // // if (time_elapsed > 1e-6) {
+            // }
         }
 
         switch (planner_mode) {
-        case PlannerMode::CONST_TIME_PLAN:
+        case PlannerMode::CONST_TIME_QUERY:
         {
             ret_plan = QueryConstTimePlanner(
                         &conveyor_planner,
@@ -1290,6 +1411,16 @@ int main(int argc, char* argv[])
                         object_height,
                         &traj,
                         intercept_time);
+           break;
+        }
+        case PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY:
+        {
+            ret_plan = QueryReplanningTestsPlanner(
+                        &conveyor_planner,
+                        start_state,
+                        grasps,
+                        object_height,
+                        100);
             break;
         }
         case PlannerMode::NORMAL_QUERY:
@@ -1306,20 +1437,49 @@ int main(int argc, char* argv[])
         }
         case PlannerMode::PREPROCESS:
         {
-            ret_plan = PreprocessConveyorPlanner(
+            ret_plan = PreprocessConveyorPlannerMain(
                 &conveyor_planner,
                 start_state,
                 grasps,
                 object_height);
             break;
         }
-        case PlannerMode::ALL_TESTS_QUERY:
+        case PlannerMode::ALL_TESTS_CONST_TIME_QUERY:
         {
             ret_plan = QueryAllTestsPlanner(
                 &conveyor_planner,
                 start_state,
                 grasps,
                 object_height);
+            break;
+        }
+        case PlannerMode::ALL_TESTS_NORMAL_QUERY:
+        {
+            ret_plan = QueryAllTestsNormalPlanner(
+                &conveyor_planner,
+                start_state,
+                grasps,
+                object_height);
+            break;
+        }
+        case PlannerMode::RANDOM_TESTS_CONST_TIME_QUERY:
+        {
+            ret_plan = QueryRandomTestsConstTimePlanner(
+                &conveyor_planner,
+                start_state,
+                grasps,
+                object_height,
+                100);
+            break;
+        }
+        case PlannerMode::RANDOM_TESTS_NORMAL_QUERY:
+        {
+            ret_plan = QueryRandomTestsNormalPlanner(
+                &conveyor_planner,
+                start_state,
+                grasps,
+                object_height,
+                100);
             break;
         }
         default:
@@ -1329,11 +1489,25 @@ int main(int argc, char* argv[])
         }
 
         if (planner_mode == PlannerMode::PREPROCESS ||
-            planner_mode == PlannerMode::ALL_TESTS_QUERY) {
+            planner_mode == PlannerMode::ALL_TESTS_CONST_TIME_QUERY) {
             break;
         }
         
-        if (ret_plan) {
+        // Even if the replan failed and request is till active continue executing last plan
+        if (ret_plan || g_request_active) {
+            if (!ret_plan) {
+                ROS_WARN("Replan failed, resending the previous trajectory");
+                // either request was after cutoff or plan didn't exist
+                // Resend the same traj (hack around using a separate thread for execution)
+                auto traj_prev = traj;
+                traj_prev.joint_trajectory.points.clear();
+                for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
+                    if (traj.joint_trajectory.points[i].time_from_start.toSec() >= start_state.joint_state.position[8] - 1e-3) {
+                        traj_prev.joint_trajectory.points.push_back(traj.joint_trajectory.points[i]);
+                    }
+                }
+                traj = traj_prev;
+            }
             SMPL_INFO("Total trajectory time: %f, intercept time: %f",
                     traj.joint_trajectory.points.back().time_from_start.toSec(), intercept_time);
             ret_exec = ExecutePickup(
@@ -1347,6 +1521,23 @@ int main(int argc, char* argv[])
                             &arm);
             if (ret_exec) {
                 SMPL_INFO("Object picked up successfully!!");
+                count = 0;
+
+                auto status = arm.traj_client_->getState();
+                // while(status != actionlib::SimpleClientGoalState::StateEnum::SUCCEEDED) {
+                //     status = arm.traj_client_->getState();
+                //     ROS_ERROR("execution error!!!");
+                //     ros::Duration(0.01).sleep();
+                // }
+                printf("Final Controller Status! %s\n", arm.traj_client_->getState().toString().c_str());
+                // Go back to home configuration
+                    
+                ROS_INFO("Going back to home configuration");
+                arm.startTrajectory(arm.armHomeTrajectory(home_state), true);
+                gripper.OpenGripper(true);
+                conveyor_planner.current_path_.clear();
+                ROS_INFO("Visualizing!!");
+                AnimatePath(&manip_cchecker, &traj);
             }
             else {
                 SMPL_WARN("Execution Incomplete; request is still active");
@@ -1354,9 +1545,11 @@ int main(int argc, char* argv[])
             }
         }
         else {
+            ROS_ERROR("Planner failed");
             if (execution_mode == ExecutionMode::SIMULATION) {
                 break;
             }
+            g_request_active = false;
         }
         g_request_active = false;
     }

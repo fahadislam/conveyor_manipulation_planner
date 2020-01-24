@@ -115,13 +115,13 @@ bool Init(
     case smpl::collision::ShapeType::Box:
     {
         auto* box = static_cast<const smpl::collision::BoxShape*>(collision_object->shapes[0]);
-        checker->box_geom_actual = std::make_shared<fcl::Boxf>(
+        checker->box_geom = std::make_shared<fcl::Boxf>(
                 box->size[0], box->size[1], box->size[2]);
-        double inflation = 1.1;
-        checker->box_geom_inflated = std::make_shared<fcl::Boxf>(
-                box->size[0] * inflation, box->size[1] * inflation, box->size[2] * inflation);
+        // double inflation = 1.2;
+        // checker->box_geom_inflated = std::make_shared<fcl::Boxf>(
+        //         box->size[0] * inflation, box->size[1] * inflation, box->size[2] * inflation);
         fcl::Transform3f box_pose;
-        checker->obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(checker->box_geom_inflated, box_pose);
+        checker->obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(checker->box_geom, box_pose);
         break;
     }
     default:
@@ -139,17 +139,17 @@ void ConveyorManipChecker::setObjectInitialPose(const Eigen::Affine3d& pose)
     object_init_pose = pose;
 }
 
-void ConveyorManipChecker::inflateCollisionObject()
-{
-    fcl::Transform3f box_pose;
-    obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom_inflated, box_pose);
-}
+// void ConveyorManipChecker::inflateCollisionObject()
+// {
+//     fcl::Transform3f box_pose;
+//     obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom_inflated, box_pose);
+// }
 
-void ConveyorManipChecker::deflateCollisionObject()
-{
-    fcl::Transform3f box_pose;
-    obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom_actual, box_pose);
-}
+// void ConveyorManipChecker::deflateCollisionObject()
+// {
+//     fcl::Transform3f box_pose;
+//     obj_conveyor = smpl::make_unique<fcl::CollisionObjectf>(box_geom_actual, box_pose);
+// }
 
 void ConveyorManipChecker::updateGripperMeshesState()
 {
@@ -303,7 +303,7 @@ bool ConveyorManipChecker::isStateToStateValid(
     // if (verbose) {
     //     printf("Shortcut %f %f\n", start.back(), finish.back());
     //     // if (fabs(start.back() - 3.6) < 1e-6 && fabs(finish.back() - 3.8) < 1e-6) {
-    //     if (fabs(start.back() - 0.0) < 1e-3 && fabs(finish.back() - 3.71017) < 1e-3) {
+    //     if (fabs(start.back() - 0.0) < 1e-3 && fabs(finish.back() - 7.194476) < 1e-3) {
     //         printf("bad edge\n");
     //         vis = true;
     //     }
@@ -364,6 +364,14 @@ bool ConveyorManipChecker::isStateToStateValid(
         else {
             if (!checkStateFCL(path[i], pose_object)) {
                 // printf("i %zu size %zu fcl collision \n", i, path.size());
+                // if (vis) {
+                //     printf("Invalid %f %f\n", start.back(), finish.back());
+                //     auto invalid_state = path[i+1];
+                //     invalid_state.push_back(state_time);
+
+                //     SV_SHOW_INFO(getCollisionModelVisualization(invalid_state));
+                //     getchar();
+                // }
                 return false;
             }
         }
@@ -395,7 +403,7 @@ auto ConveyorManipChecker::getCollisionModelVisualization(const smpl::RobotState
     smpl::RobotState state_positions(state.size() - 1);
     std::copy(state.begin(), state.begin() + state.size() - 1, state_positions.begin());
     auto ma_collision_model = parent->getCollisionModelVisualization(state_positions);  // updates spheres
-    // ma_collision_model.clear();
+    ma_collision_model.clear();
     updateGripperMeshesState();
 
     // Gripper mesh markers

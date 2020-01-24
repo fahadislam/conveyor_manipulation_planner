@@ -79,6 +79,7 @@ struct PlanPathParams
 	bool rc_constrained;
 	bool shortcut_prerc;
 	bool only_check_success;
+	// bool post_process;
 	std::string singleton_dir;
 };
 
@@ -108,10 +109,19 @@ struct ConveyorPlanner
     smpl::ConveyorManipHeuristic 			manip_heuristic;
     smpl::GenericEgraphHeuristic 			egraph_manip_heuristic;
 
+    double interp_resolution_;
+    double replan_resolution_;
     double time_bound_;
     double replan_cutoff_;
     moveit_msgs::RobotState home_state_;
+    std::vector<std::vector<smpl::RobotState>> home_paths_;
     std::vector<smpl::RobotState> current_path_;
+    int current_path_id_;
+    int start_id_;
+    std::string main_dir_;
+
+    // global variables for recursion
+    bool home_query = true;
 
     ConveyorPlanner() :
         hkey_dijkstra(&object_graph, &object_heuristic)
@@ -128,16 +138,22 @@ bool Init(
     smpl::OccupancyGrid* manip_grid,
     const moveit_msgs::RobotState home_state,
     const Eigen::Vector3d& object_velocity,
-    const smpl::PlanningParams* manip_params);
+    const smpl::PlanningParams* manip_params,
+    bool preprocessing = false);
 
 bool PreprocessConveyorPlanner(
     ConveyorPlanner* planner,
     const moveit_msgs::RobotState& start_state,
     const std::vector<Eigen::Affine3d>& grasps,
-    double height);
+    double height,
+    std::vector<int>& G_REM,
+    std::vector<int>& G_COV);
 
-bool CheckAllLatchings(
-    ConveyorPlanner* planner);
+bool PreprocessConveyorPlannerMain(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& home_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height);
 
 bool QueryConstTimePlanner(
 	ConveyorPlanner* planner,
@@ -158,6 +174,33 @@ bool QueryNormalPlanner(
     double& intercept_time);
 
 bool QueryAllTestsPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height);
+
+bool QueryReplanningTestsPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests);
+
+bool QueryRandomTestsNormalPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests);
+
+bool QueryRandomTestsConstTimePlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests);
+
+bool QueryAllTestsNormalPlanner(
     ConveyorPlanner* planner,
     const moveit_msgs::RobotState& start_state,
     const std::vector<Eigen::Affine3d>& grasps,

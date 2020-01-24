@@ -54,6 +54,9 @@
 #include <smpl/graph/robot_planning_space.h>
 #include <smpl/graph/action_space.h>
 
+#include <smpl/graph/manip_lattice.h>
+// TODO: Inherit from ManipLattice
+
 namespace smpl {
 
 class RobotHeuristic;
@@ -141,6 +144,14 @@ public:
 
     const auto extractConveyorObjectState(double t)
         -> std::pair<Eigen::Affine3d, Eigen::Vector3d> override;
+
+    void setMapId(const RobotState& state, int map_id);
+
+    auto getMapIds(const RobotState& state) -> std::vector<int>;
+
+    bool saveStartToMapIdMap(std::string filepath);
+    bool loadStartToMapIdMap(std::string filepath);
+
     /// \name Required Public Functions from ExtractRobotStateExtension
     ///@{
     auto extractState(int state_id) -> const RobotState& override;
@@ -233,6 +244,10 @@ private:
     typedef PointerValueHash<StateKey> StateHash;
     typedef PointerValueEqual<StateKey> StateEqual;
     hash_map<StateKey*, int, StateHash, StateEqual> m_state_to_id;
+
+    typedef std::ValueHash<RobotCoord> StateHash2;
+    typedef std::ValueEqual<RobotCoord> StateEqual2;
+    hash_map<RobotCoord, std::vector<int>, StateHash2, StateEqual2> m_start_to_map_id;
 
     // maps from stateID to coords
 

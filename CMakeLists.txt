@@ -41,7 +41,7 @@ add_library(
     src/conveyor_manip_heuristic.cpp
     src/conveyor_object_model.cpp
     src/conveyor_object_lattice.cpp
-    #src/conveyor_planner_interface.cpp
+    src/conveyor_planner_interface.cpp
     src/conveyor_planner.cpp
     src/hkey_dijkstra.cpp)
 target_link_libraries(conveyor_manipulation_planner ${catkin_LIBRARIES})

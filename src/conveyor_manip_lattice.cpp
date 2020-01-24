@@ -48,6 +48,13 @@
 #include <smpl/debug/marker_utils.h>
 #include <smpl/spatial.h>
 
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/serialization/unordered_map.hpp>
+#include <boost/serialization/vector.hpp>
+#include <fstream>
+#include <iostream>
+
 // #include <ros/ros.h>
 auto std::hash<smpl::ConveyorManipLatticeState>::operator()(
     const argument_type& s) const -> result_type
@@ -118,7 +125,6 @@ bool ConveyorManipLattice::init(
     m_bounded[_robot->jointVariableCount()] = true;
 
     m_goal_state_id = reserveHashEntry();
-    SMPL_INFO_NAMED(G_LOG, "  goal state has state ID %d", m_goal_state_id);
     SMPL_DEBUG_NAMED(G_LOG, "  goal state has state ID %d", m_goal_state_id);
 
     std::vector<int> discretization(_robot->jointVariableCount() + 1);
@@ -227,7 +233,7 @@ void ConveyorManipLattice::GetSuccs(
     SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
 
     auto* vis_name = "expansion";
-    SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
+    SV_SHOW_DEBUG_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
 
     int goal_succ_count = 0;
 
@@ -483,6 +489,66 @@ const auto ConveyorManipLattice::extractConveyorObjectState(double t)
     return std::make_pair(object_pose, m_object_velocity);
 }
 
+int count = 0;
+void ConveyorManipLattice::setMapId(const RobotState& state, int map_id)
+{
+    count++;
+    printf("called %d\n", count);
+    RobotCoord coord(state.size());
+    stateToCoord(state, coord);
+    SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  coord set: " << coord);
+
+    // auto sit = m_state_to_id.find(coord);
+    // if (sit == m_state_to_id.end()) {
+    //     return -1;
+    // }
+    m_start_to_map_id[coord].push_back(map_id);
+    printf("start_to_map_id_map size %zu duplicates %zu\n",
+        m_start_to_map_id.size(), m_start_to_map_id[coord].size());
+}
+
+auto ConveyorManipLattice::getMapIds(const RobotState& state)
+    -> std::vector<int>
+{
+    RobotCoord coord(state.size());
+    stateToCoord(state, coord);
+    SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  coord get: " << coord);
+    auto it = m_start_to_map_id.find(coord);
+    if (it != m_start_to_map_id.end()) {
+        return it->second;
+    }
+    printf("No map ids found\n");
+    return {};
+}
+
+bool ConveyorManipLattice::saveStartToMapIdMap(std::string filepath)
+{
+    printf("Saving start_to_map_id_map, size %zu\n", m_start_to_map_id.size());
+    std::ofstream ofs(filepath + "/start_to_map_id_map");
+    boost::archive::text_oarchive oarch(ofs);
+    oarch << m_start_to_map_id;
+    ofs.close();
+    return true;
+}
+
+bool ConveyorManipLattice::loadStartToMapIdMap(std::string filepath)
+{
+    m_start_to_map_id.clear();
+    std::ifstream ifs(filepath + "/start_to_map_id_map");
+    if(!ifs.is_open()) {
+        return false;
+    }
+    boost::archive::text_iarchive iarch(ifs);
+    iarch >> m_start_to_map_id;
+    for (auto s : m_start_to_map_id) {
+        // printf("id %d", s.second);
+        // SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  coord: " << s.first);
+    }
+    printf("Loading start_to_map_id_map, size %zu\n", m_start_to_map_id.size());
+    ifs.close();
+    return true;
+}
+
 const RobotState& ConveyorManipLattice::extractState(int state_id)
 {
     // printf("id %d size %zu\n", state_id, m_states.size());
@@ -648,6 +714,7 @@ int ConveyorManipLattice::cost(
     // return DefaultCostMultiplier;
 }
 
+// int collision_failures = 0;
 bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& action)
 {
     RobotState state_positions(robot()->jointVariableCount());
@@ -705,6 +772,8 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
     if (violation_mask) {
         if (action.size() > 1) {
             SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
+            // collision_failures++;
+            // printf("collision_failures %d\n", collision_failures);
         }
         return false;
     }
@@ -739,6 +808,8 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
     if (violation_mask) {
         if (action.size() > 1) {
             SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
+            // collision_failures++;
+            // printf("collision_failures %d\n", collision_failures);
         }
         return false;
     }
@@ -755,6 +826,9 @@ bool WithinPositionTolerance(
     auto dx = std::fabs(A.translation()[0] - B.translation()[0]);
     auto dy = std::fabs(A.translation()[1] - B.translation()[1]);
     auto dz = std::fabs(A.translation()[2] - B.translation()[2]);
+    // printf("pos tol %f\n", tol[0]);
+    if (dx <= tol[0] && dy <= tol[1] && dz <= tol[2])
+        // printf("dx dy dz %f %f %f\n", dx, dy, dz);
     return dx <= tol[0] && dy <= tol[1] && dz <= tol[2];
 }
 
@@ -770,7 +844,10 @@ bool WithinOrientationTolerance(
         qg = Quaternion(-qg.w(), -qg.x(), -qg.y(), -qg.z());
     }
 
+    // printf("rot tol%f\n", tol[0]);
     auto theta = normalize_angle(2.0 * acos(q.dot(qg)));
+    // printf("thetaaaaaaaaaaaaa %f\n", theta);
+    if (theta < tol[0])
     return theta < tol[0];
 }
 
@@ -794,6 +871,7 @@ auto WithinTolerance(
 
 bool ConveyorManipLattice::isGoal(const RobotState& state)
 {
+    return false;
     switch (goal().type) {
     case GoalType::JOINT_STATE_GOAL:
     {
@@ -894,7 +972,7 @@ bool ConveyorManipLattice::setStart(const RobotState& state)
     // get arm position in environment
     RobotCoord start_coord(state.size());
     stateToCoord(state, start_coord);
-    SMPL_INFO_STREAM_NAMED(G_LOG, "  start coord: " << start_coord);
+    // SMPL_INFO_STREAM_NAMED(G_LOG, "  start coord: " << start_coord);
 
     m_start_state_id = getOrCreateState(start_coord, state);
 
@@ -906,6 +984,8 @@ bool ConveyorManipLattice::setStart(const RobotState& state)
 
 bool ConveyorManipLattice::setGoal(const GoalConstraint& goal)
 {
+    m_actions->m_intercept_time = 0.0;
+
     auto success = false;
 
     switch (goal.type) {
@@ -966,12 +1046,19 @@ void ConveyorManipLattice::clearStates()
 
 double ConveyorManipLattice::getInterceptTime(const std::vector<RobotState>& path)
 {
+    // if (m_actions->m_intercept_time <= 0.0) {
+    //     SMPL_ERROR("Zero intercept time");
+    // }
+    // return m_actions->m_intercept_time;
+
     for (const auto& s : path) {
         Affine3 pose;
         pose = computePlanningFrameFK(s);
         Eigen::Affine3d object_pose;
         Eigen::Vector3d object_velocity;
         std::tie(object_pose, object_velocity) = extractConveyorObjectState(s.back());
+        // printf("goal position2 %f %f %f\n", object_pose.translation().x(), object_pose.translation().y(), object_pose.translation().z());
+        // printf("grip position2 %f %f %f\n", pose.translation().x(), pose.translation().y(), pose.translation().z());
         auto near = WithinTolerance(
                 pose,
                 object_pose,
@@ -981,7 +1068,14 @@ double ConveyorManipLattice::getInterceptTime(const std::vector<RobotState>& pat
             return s.back();
         }
     }
-    SMPL_ERROR("Failed to find intercept time");
+    // for (const auto& s : path) {
+    //     SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  wp: " << s);
+    // }
+
+    // getchar();
+
+    SMPL_ERROR("Failed to find intercept time return last time");
+    return 0.0;
 }
 
 bool ConveyorManipLattice::extractPath(
@@ -1227,9 +1321,9 @@ bool ConveyorManipLattice::setGoalConfiguration(const GoalConstraint& goal)
     auto vis_name = "target_config";
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(goal.angles, vis_name));
 
-    SMPL_INFO_NAMED(G_LOG, "A new goal has been set");
-    SMPL_INFO_STREAM_NAMED(G_LOG, "  config: " << goal.angles);
-    SMPL_INFO_STREAM_NAMED(G_LOG, "  tolerance: " << goal.angle_tolerances);
+    SMPL_DEBUG_NAMED(G_LOG, "A new goal has been set");
+    SMPL_DEBUG_STREAM_NAMED(G_LOG, "  config: " << goal.angles);
+    SMPL_DEBUG_STREAM_NAMED(G_LOG, "  tolerance: " << goal.angle_tolerances);
 
     // notify observers of updated goal
     return RobotPlanningSpace::setGoal(goal);

@@ -60,8 +60,8 @@ public:
 
     void setObjectInitialPose(const Eigen::Affine3d& pose);
 
-    void inflateCollisionObject();
-    void deflateCollisionObject();
+    // void inflateCollisionObject();
+    // void deflateCollisionObject();
 
     smpl::ForwardKinematicsInterface* m_fk_iface = nullptr;
 
@@ -74,8 +74,8 @@ public:
     std::vector<LinkCollisionModel> link_collision_models;
     std::unique_ptr<fcl::CollisionObjectf> obj_conveyor;
 
-    std::shared_ptr<fcl::Boxf> box_geom_actual;
-    std::shared_ptr<fcl::Boxf> box_geom_inflated;
+    std::shared_ptr<fcl::Boxf> box_geom;
+    // std::shared_ptr<fcl::Boxf> box_geom_inflated;
 
     // for gripper visualization
     std::map<std::string, Eigen::Affine3d> link_to_pose_map;

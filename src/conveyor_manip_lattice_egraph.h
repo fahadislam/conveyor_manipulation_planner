@@ -58,6 +58,9 @@ public:
     bool loadPath(
         const std::string& filepath,
         std::vector<RobotState>& path);
+    bool loadPaths(
+        const std::string& dirpath,
+        std::vector<std::vector<smpl::RobotState>>& paths);
 
     void getExperienceGraphNodes(
         int state_id,

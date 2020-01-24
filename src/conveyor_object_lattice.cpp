@@ -153,30 +153,54 @@ void ConveyorObjectLattice::GetSuccs(
 }
 
 
-void ConveyorObjectLattice::setPathId(int state_id, int path_id, bool singleton)
+void ConveyorObjectLattice::setPathId(int start_id, int state_id, int path_id, bool singleton)
 {
+    // SMPL_INFO_NAMED(G_LOG, "  state id: %d,     path id: %d", state_id, path_id);
+    // SMPL_INFO_NAMED(G_LOG, "  start id: %d", start_id);
+    if (m_state_to_pid.size() <= start_id) {
+        LookupTable lt;
+        m_state_to_pid.push_back(lt);
+    }
     auto entry = getHashEntry(state_id);
-    m_state_to_pid[entry->coord] = std::pair<int, bool>(path_id, singleton);
-    SMPL_INFO_NAMED(G_LOG, "  state id: %d,     path id: %d", state_id, path_id);
+    // SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "        coord: " << entry->coord);
+    m_state_to_pid[start_id][entry->coord] = std::pair<int, bool>(path_id, singleton);
 }
 
-std::pair<int, bool> ConveyorObjectLattice::getPathId(RobotState state)
+std::pair<int, bool> ConveyorObjectLattice::getPathId(int start_id, const RobotState& state)
 {
+    // printf("map id %d\n", start_id);
+    // printf("size %zu\n", m_state_to_pid.size());
+    assert (m_state_to_pid.size() > start_id);
+
     RobotCoord coord(robot()->jointVariableCount());
     stateToCoord(state, coord);
 
-    auto it = m_state_to_pid.find(coord);
-    if (it != m_state_to_pid.end()) {
+    // SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "        coord: " << coord);
+
+    auto it = m_state_to_pid[start_id].find(coord);
+    if (it != m_state_to_pid[start_id].end()) {
         return it->second;
     }
     return std::pair<int, bool>(-1,false);
 }
 
-bool ConveyorObjectLattice::saveStateToPathIdMap()
+bool ConveyorObjectLattice::saveStateToPathIdMap(std::string filepath)
 {
-    std::ofstream ofs("/home/fislam/paths/state_to_pathid_map");
+    // assert(m_state_to_pid.size() > start_id);
+    // \data
+    //     \start0 ... startn
+    //         \paths
+    //             root
+    //             path0...pathn
+    //             state_to_pathid_map
+    std::ofstream ofs(filepath + "/state_to_path_id_maps");
     boost::archive::text_oarchive oarch(ofs);
+    // oarch << m_state_to_pid[start_id];
     oarch << m_state_to_pid;
+
+    // if (home_query) {
+    //     m_state_to_pid_home = m_state_to_pid[start_id];
+    // }
 
     // for (auto p : m_state_to_pid) {
     //     RobotState state(p.first.size());
@@ -189,9 +213,9 @@ bool ConveyorObjectLattice::saveStateToPathIdMap()
     return true;
 }
 
-bool ConveyorObjectLattice::loadStateToPathIdMap()
+bool ConveyorObjectLattice::loadStateToPathIdMap(std::string filepath)
 {
-    std::ifstream ifs("/home/fislam/paths/state_to_pathid_map");
+    std::ifstream ifs(filepath + "/state_to_path_id_maps");
     if(!ifs.is_open()) {
         return false;
     }

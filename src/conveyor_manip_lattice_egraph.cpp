@@ -155,7 +155,7 @@ bool ConveyorManipLatticeEgraph::extractPath(
                 ConveyorManipLatticeState* succ_entry = getHashEntry(succ_state_id);
                 assert(succ_entry);
 
-                SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  GOAL COORD: " << succ_coord);
+                SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  GOAL COORD: " << succ_coord);
 
                 const int edge_cost = cost(prev_entry, succ_entry, true);
                 if (edge_cost < best_cost) {
@@ -201,7 +201,7 @@ bool ConveyorManipLatticeEgraph::extractPath(
             ExperienceGraph::node_id cn =
                     std::distance(m_egraph_state_ids.begin(), cnit);
 
-            SMPL_INFO("Check for shortcut from %d to %d (egraph %zu -> %zu)!", prev_id, curr_id, pn, cn);
+            SMPL_DEBUG("Check for shortcut from %d to %d (egraph %zu -> %zu)!", prev_id, curr_id, pn, cn);
 
             std::vector<ExperienceGraph::node_id> node_path;
             found = findShortestExperienceGraphPath(pn, cn, node_path);
@@ -245,7 +245,7 @@ bool ConveyorManipLatticeEgraph::extractPath(
 
 bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::string>& paths)
 {
-    SMPL_INFO("Load Experience Graph at %s", paths[0].c_str());
+    SMPL_DEBUG("Load Experience Graph at %s", paths[0].c_str());
 
 
     for (const auto& path : paths) {
@@ -268,7 +268,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::stri
                 continue;
             }
 
-            SMPL_INFO("Create hash entries for experience graph states");
+            SMPL_DEBUG("Create hash entries for experience graph states");
 
             auto& pp = egraph_states.front();  // previous robot state
             RobotCoord pdp(robot()->jointVariableCount() + 1); // previous robot coord
@@ -328,13 +328,13 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::stri
     }
 
 
-    SMPL_INFO("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
+    SMPL_DEBUG("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
     return true;
 }
 
 bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
 {
-    SMPL_INFO("Load Experience Graph at %s", path.c_str());
+    SMPL_DEBUG("Load Experience Graph at %s", path.c_str());
 
     boost::filesystem::path p(path);
     if (!boost::filesystem::is_directory(p)) {
@@ -355,7 +355,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
             continue;
         }
 
-        SMPL_INFO("Create hash entries for experience graph states");
+        SMPL_DEBUG("Create hash entries for experience graph states");
 
         auto& pp = egraph_states.front();  // previous robot state
         RobotCoord pdp(robot()->jointVariableCount() + 1); // previous robot coord
@@ -413,7 +413,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
         }
     }
 
-    SMPL_INFO("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
+    SMPL_DEBUG("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
     return true;
 }
 
@@ -421,7 +421,7 @@ bool ConveyorManipLatticeEgraph::loadPath(
     const std::string& filepath,
     std::vector<RobotState>& path)
 {
-    SMPL_INFO("Load Experience Graph at %s", filepath.c_str());
+    SMPL_DEBUG("Load path at %s", filepath.c_str());
 
     boost::filesystem::path p(filepath);
     if (!boost::filesystem::is_directory(p)) {
@@ -442,7 +442,20 @@ bool ConveyorManipLatticeEgraph::loadPath(
         }
     }
 
-    SMPL_INFO("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
+    SMPL_DEBUG("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
+    return true;
+}
+
+bool ConveyorManipLatticeEgraph::loadPaths(
+    const std::string& dirpath,
+    std::vector<std::vector<smpl::RobotState>>& paths)
+{
+    for (int i = 0; i < paths.size(); ++i) {
+        auto filepath = dirpath + std::to_string(i);
+        if (!loadPath(filepath, paths[i])) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -486,14 +499,14 @@ bool ConveyorManipLatticeEgraph::shortcut(
         max_time = std::max(max_time, t);
     }
 
-    SMPL_INFO_STREAM("Shortcut " << first_entry->state << " -> " << second_entry->state);
+    SMPL_DEBUG_STREAM("Shortcut " << first_entry->state << " -> " << second_entry->state);
 
     double time_diff = second_entry->state.back() - first_entry->state.back();
     if (time_diff < max_time) {
-        SMPL_WARN("Failed shortcut time-wise!");
+        SMPL_DEBUG("Failed shortcut time-wise!");
         return false;
     }
-    SMPL_INFO("  Shortcut %d -> %d!", first_id, second_id);
+    SMPL_DEBUG("  Shortcut %d -> %d!", first_id, second_id);
 
     auto* vis_name = "shortcut";
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(first_entry->state, "shortcut_from"));
@@ -559,7 +572,7 @@ bool ConveyorManipLatticeEgraph::snap(
         return false;
     }
 
-    SMPL_INFO("  Snap %d -> %d!", first_id, second_id);
+    SMPL_DEBUG("  Snap %d -> %d!", first_id, second_id);
     cost = 1000 * max_time;
     return true;
 }
@@ -719,7 +732,7 @@ bool ConveyorManipLatticeEgraph::findShortestExperienceGraphPath(
         min->closed = true;
 
         if (min == &search_nodes[goal_node]) {
-            SMPL_ERROR("Found shortest experience graph path");
+            SMPL_DEBUG("Found shortest experience graph path");
             ExperienceGraphSearchNode* ps = nullptr;
             for (ExperienceGraphSearchNode* s = &search_nodes[goal_node];
                 s; s = s->bp)
@@ -775,10 +788,10 @@ bool ConveyorManipLatticeEgraph::parseExperienceGraphFile(
         return false;
     }
 
-    SMPL_INFO("Parsed experience graph file");
-    SMPL_INFO("  Has Header: %s", parser.hasHeader() ? "true" : "false");
-    SMPL_INFO("  %zu records", parser.recordCount());
-    SMPL_INFO("  %zu fields", parser.fieldCount());
+    SMPL_DEBUG("Parsed experience graph file");
+    SMPL_DEBUG("  Has Header: %s", parser.hasHeader() ? "true" : "false");
+    SMPL_DEBUG("  %zu records", parser.recordCount());
+    SMPL_DEBUG("  %zu fields", parser.fieldCount());
 
     const size_t jvar_count = robot()->getPlanningJoints().size();
     if (parser.fieldCount() != jvar_count + 1) {
@@ -803,7 +816,7 @@ bool ConveyorManipLatticeEgraph::parseExperienceGraphFile(
         egraph_states.push_back(std::move(state));
     }
 
-    SMPL_INFO("Read %zu states from experience graph file", egraph_states.size());
+    SMPL_DEBUG("Read %zu states from experience graph file", egraph_states.size());
     return true;
 }
 
@@ -880,7 +893,7 @@ void ConveyorManipLatticeEgraph::rasterizeExperienceGraph()
 //            }
 //        }
 //    }
-//    SMPL_INFO("Experience graph contains %d edges", edge_count);
+//    SMPL_DEBUG("Experience graph contains %d edges", edge_count);
 //
 //    // restore action space configuration
 //    for (int i = 0; i < MotionPrimitive::NUMBER_OF_MPRIM_TYPES; ++i) {

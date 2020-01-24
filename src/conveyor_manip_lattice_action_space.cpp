@@ -587,6 +587,11 @@ bool ConveyorManipLatticeActionSpace::computeIkAction(
     return true;
 }
 
+// int calls = 0;
+// int successes = 0;
+// int failures_limits = 0;
+// int failures_lift = 0;
+
 bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
     const double time_start,
     const RobotState& jnt_positions,
@@ -595,6 +600,8 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
     const Eigen::Vector3d& object_velocity,
     std::vector<RobotState>& action)
 {
+    // calls++;
+    // printf("calls %d\n", calls);
     // Constants
     double dt = 0.01;
     double gain_p = 1.0;
@@ -631,6 +638,82 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
             return false;
         }
 
+        // Add waypoint to action
+        auto wp = q_;
+        double time_state = time_start + dt * (iter);
+        wp.push_back(time_state);
+        action.push_back(std::move(wp));
+
+        // Check if within tolerance
+        // ROS_INFO("dx: %f dy: %f dz: %f", diff.translation().x(), diff.translation().y(), diff.translation().z());
+        // ROS_INFO("dR: %f dP: %f dY: %f", rot(0), rot(1), rot(2));
+        // getchar();
+
+        // auto quat = Quaternion(diff.rotation());
+        // auto theta = normalize_angle(2.0 * acos(quat.dot(quat)));
+
+        Quaternion qg(xo_.rotation());
+        Quaternion q(x_.rotation());
+        if (q.dot(qg) < 0.0) {
+            qg = Quaternion(-qg.w(), -qg.x(), -qg.y(), -qg.z());
+        }
+
+        auto theta = normalize_angle(2.0 * acos(q.dot(qg)));
+
+        double dx = fabs(xo_.translation().x() - x_.translation().x());
+        double dy = fabs(xo_.translation().y() - x_.translation().y());
+        double dz = fabs(xo_.translation().z() - x_.translation().z());
+
+        if (theta < planningSpace()->goal().rpy_tolerance[0] 
+                // std::fabs(rot(0)) <= planningSpace()->goal().rpy_tolerance[0]
+                // && std::fabs(rot(1)) <= planningSpace()->goal().rpy_tolerance[1]
+                // && std::fabs(rot(2)) <= planningSpace()->goal().rpy_tolerance[2]
+                && std::fabs(dx) <= planningSpace()->goal().xyz_tolerance[0]
+                && std::fabs(dy) <= planningSpace()->goal().xyz_tolerance[1]
+                && std::fabs(dz) <= planningSpace()->goal().xyz_tolerance[2]) {
+            if (!synched) {
+                intercept_time = time_state;
+                synched = true;
+                // printf("Intercept time %f\n", intercept_time);
+                // double time_state = action.back().back();
+                // for (auto ss : q_)
+                //     printf(" %f", ss);
+                // printf(" %f\n", time_state);
+
+                // printf("    tolerances     %f %f %f\n", planningSpace()->goal().xyz_tolerance[0], planningSpace()->goal().xyz_tolerance[1], planningSpace()->goal().xyz_tolerance[2]);
+                // printf("    dif1 position1 %f %f %f\n", diff.translation().x(), diff.translation().y(), diff.translation().z());
+                // printf("    dif2 position1 %f %f %f\n", dx, dy, dz);
+                // printf("    dif3 theta     %f\n", theta);
+                // printf("    goal position1 %f %f %f\n", xo_.translation().x(), xo_.translation().y(), xo_.translation().z());
+                // printf("    grip position1 %f %f %f\n", x_.translation().x(), x_.translation().y(), x_.translation().z());
+                // m_intercept_time = intercept_time;
+                // getchar();
+
+            }
+            if (time_state - intercept_time >= gripping_time) {
+                // return true;
+                // Add lift motion
+                // x_.translation().y() += lift_offset_y;
+                x_.translation().z() += lift_offset_z;
+                if (!m_ik_iface->computeIK(x_, q_, q_)) {
+                    SMPL_DEBUG("Failed to lift up");
+                    // failures_lift++;
+                    // printf("failures_lift %d\n", failures_lift);
+                    return false;
+                }
+                wp = q_;
+                double time_state = action.back().back() + lift_time;
+                wp.push_back(time_state);
+
+                action.push_back(std::move(wp));
+                // SMPL_INFO("Added adaptive primitive");
+                // successes++;
+                // printf("successes %d\n", successes);
+
+                return true;
+            }
+        }
+
         // Move arm joints
         for(size_t i = 0; i < q_.size(); ++i) {
             q_[i] += (q_dot[i] * dt);
@@ -641,6 +724,8 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
         // Check joint limits
         if (!planningSpace()->robot()->checkJointLimits(q_)) {
             // SMPL_INFO("Violates joint limits");
+            // failures_limits++;
+            // printf("failures_limits %d\n", failures_limits);
             return false;
         }
 
@@ -649,43 +734,6 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
         xo_.translation().y() += object_velocity[1] * dt;
         xo_.translation().z() += object_velocity[2] * dt;    
 
-        // Add waypoint to action
-        auto wp = q_;
-        double time_state = time_start + dt * (iter + 1);
-        wp.push_back(time_state);
-        action.push_back(std::move(wp));
-
-        // Check if within tolerance
-        // ROS_INFO("dx: %f dy: %f dz: %f", diff.translation().x(), diff.translation().y(), diff.translation().z());
-        // ROS_INFO("dR: %f dP: %f dY: %f", rot(0), rot(1), rot(2));
-        // getchar();
-        if (std::fabs(rot(0)) <= planningSpace()->goal().rpy_tolerance[0]
-                && std::fabs(rot(1)) <= planningSpace()->goal().rpy_tolerance[1]
-                && std::fabs(rot(2)) <= planningSpace()->goal().rpy_tolerance[2]
-                && std::fabs(diff.translation().x()) <= planningSpace()->goal().xyz_tolerance[0]
-                && std::fabs(diff.translation().y()) <= planningSpace()->goal().xyz_tolerance[1]
-                && std::fabs(diff.translation().z()) <= planningSpace()->goal().xyz_tolerance[2]) {
-            if (!synched) {
-                intercept_time = time_state;
-                synched = true;
-            }
-            if (time_state - intercept_time >= gripping_time) {
-                // return true;
-                // Add lift motion
-                // x_.translation().y() += lift_offset_y;
-                x_.translation().z() += lift_offset_z;
-                if (!m_ik_iface->computeIK(x_, q_, q_)) {
-                    SMPL_INFO("Failed to lift up");
-                    return false;
-                }
-                wp = q_;
-                double time_state = action.back().back() + lift_time;
-                wp.push_back(time_state);
-                action.push_back(std::move(wp));
-                // SMPL_INFO("Added adaptive primitive");
-                return true;
-            }
-        }
     }
 
     // SMPL_INFO("Failed to reach object");
