@@ -1214,7 +1214,7 @@ bool PlanRobotPath(
     //=========================================================
 
     // ROS_INFO("BEFORE PREPROCESS");
-    // PostProcessPath(planner, path, planner->interp_resolution_, intercept_time, params.shortcut_prerc);
+    PostProcessPath(planner, path, planner->interp_resolution_, intercept_time, params.shortcut_prerc);
     // ROS_INFO("AFTER PREPROCESS");
     // printf("new path:\n");
     // for (const auto& wp : new_path) {
