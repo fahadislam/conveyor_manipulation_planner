@@ -226,7 +226,7 @@ public:
         {
             goal.trajectory.points[0].velocities[j] = 0.0;
         }
-        goal.trajectory.points[0].time_from_start = ros::Duration(2.0);
+        goal.trajectory.points[0].time_from_start = ros::Duration(4.0);
 
         return goal;
     }
@@ -675,8 +675,8 @@ void DopePoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg)
     ROS_INFO("Dope pose callback!!");
     g_pose_msg = *msg;
     g_time_current_estimate = g_pose_msg.header.stamp.toSec();
-    // g_time_perception = ros::Time::now().toSec() - g_time_current_estimate;
-    g_time_perception = 0.2;
+    g_time_perception = ros::Time::now().toSec() - g_time_current_estimate;
+    // g_time_perception = 0.2;
     // if (!g_request_active) {
     //     g_time_first_estimate = g_time_current_estimate;
     //     g_first_msg = g_pose_msg;
@@ -712,8 +712,10 @@ bool GetNewObjectGoal(std::vector<double>& object_pose)
         smpl::angles::get_euler_zyx(q, object_pose[2], pitch, roll);
         // printf("r: %f, p: %f, y: %f\n", roll, pitch, object_pose[2]);
     }
-    SMPL_INFO("Object state [perceived]: %.2f %.2f %f",
+    SMPL_INFO("#################################################");
+    SMPL_INFO("###   Object state [perceived]: %.2f %.2f %f   ###",
                 object_pose[0], object_pose[1], object_pose[2]);
+    SMPL_INFO("#################################################");
     return true;
 }
 
@@ -733,13 +735,13 @@ void AnimatePath(
             m.ns = "path_animation";
         }
         SV_SHOW_INFO(markers);
-        // if (pidx != traj->joint_trajectory.points.size() - 1) {
-        //     auto& point_next = traj->joint_trajectory.points[pidx + 1];
-        //     auto time = point_next.time_from_start - point.time_from_start;
-        //     ros::Duration(time).sleep();
-        // }
-        printf("time %f\n", point.time_from_start.toSec());
-        getchar();
+        if (pidx != traj->joint_trajectory.points.size() - 1) {
+            auto& point_next = traj->joint_trajectory.points[pidx + 1];
+            auto time = point_next.time_from_start - point.time_from_start;
+            ros::Duration(time).sleep();
+        }
+        // printf("time %f\n", point.time_from_start.toSec());
+        // getchar();
         pidx++;
         pidx %= traj->joint_trajectory.points.size();
     }
@@ -909,7 +911,7 @@ int main(int argc, char* argv[])
 
     g_listener.reset(new tf::TransformListener);
 
-    ros::Subscriber sub_dope = nh.subscribe("/dope/pose_mustard", 1000, DopePoseCallback);
+    ros::Subscriber sub_dope = nh.subscribe("/dope/pose_sugar", 1000, DopePoseCallback);
 
     ros::AsyncSpinner spinner(2);
     spinner.start();
@@ -1041,7 +1043,7 @@ int main(int argc, char* argv[])
     smpl::OccupancyGrid manip_grid(df, ref_counted);
 
     manip_grid.setReferenceFrame(planning_frame);
-    SV_SHOW_INFO(manip_grid.getBoundingBoxVisualization());
+    // SV_SHOW_INFO(manip_grid.getBoundingBoxVisualization());
 
     /////////////////////////////////////////
     // Initialize Parent Collision Checker //
@@ -1134,10 +1136,10 @@ int main(int argc, char* argv[])
 
     cc.setWorldToModelTransform(Eigen::Affine3d::Identity());
 
-    SV_SHOW_INFO(manip_grid.getDistanceFieldVisualization(0.2));
+    // SV_SHOW_INFO(manip_grid.getDistanceFieldVisualization(0.2));
 
-    SV_SHOW_INFO(cc.getCollisionRobotVisualization());
-    SV_SHOW_INFO(cc.getCollisionWorldVisualization());
+    // SV_SHOW_INFO(cc.getCollisionRobotVisualization());
+    // SV_SHOW_INFO(cc.getCollisionWorldVisualization());
     SV_SHOW_INFO(cc.getOccupiedVoxelsVisualization());
     ros::Duration(1.0).sleep();
 
@@ -1232,18 +1234,18 @@ int main(int argc, char* argv[])
 
     // Set Mode
 
-    // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
+    PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_QUERY;
 
-    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    // ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
-    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
+    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     //////////////////////////////////////
     //   Initialize Conveyor Planner    //
@@ -1325,7 +1327,7 @@ int main(int argc, char* argv[])
             // CHECK FOR FIRST REQUEST
             //=====================================Mid goal region offset
             
-            double mid_region_y = 1.15;
+            double mid_region_y = 1.25;
             if (!g_request_active) {
                 if (object_state[1] < mid_region_y /* || object_state[1] >= 1.3*/) {
                     ROS_WARN("Object 'y' is passed the Region Mid: y: %f, mid: %f", object_state[1], mid_region_y);
@@ -1399,6 +1401,15 @@ int main(int argc, char* argv[])
             // // if (time_elapsed > 1e-6) {
             // }
         }
+
+        // ret_plan = QueryRandomTestsEgraphPlanner(
+        //         &conveyor_planner,
+        //         start_state,
+        //         grasps,
+        //         object_height,
+        //         100);
+
+        // return 1;
 
         switch (planner_mode) {
         case PlannerMode::CONST_TIME_QUERY:

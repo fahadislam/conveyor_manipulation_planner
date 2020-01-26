@@ -193,6 +193,13 @@ bool QueryRandomTestsNormalPlanner(
     double height,
     int num_tests);
 
+bool QueryRandomTestsEgraphPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests);
+
 bool QueryRandomTestsConstTimePlanner(
     ConveyorPlanner* planner,
     const moveit_msgs::RobotState& start_state,

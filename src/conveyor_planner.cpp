@@ -709,10 +709,11 @@ bool Init(
     const smpl::PlanningParams* params,
     bool preprocessing)	// pass params
 {
-    int cpu_num = sched_getcpu();
-    cpu_num = 4;
-    ROS_INFO("cpu_num: %d\n", cpu_num);
-    planner->main_dir_ = "/home/fislam/conveyor_data_" + std::to_string(cpu_num); 
+    // int cpu_num = sched_getcpu();
+    // cpu_num = 3;
+    // ROS_INFO("cpu_num: %d\n", cpu_num);
+    // planner->main_dir_ = "/home/fislam/conveyor_data_" + std::to_string(cpu_num);
+    planner->main_dir_ = "/home/fislam/conveyor_data"; 
     if (!boost::filesystem::exists(planner->main_dir_)) {
         // ROS_INFO("Create plan output directory %s", start_dir.native().c_str());
         boost::filesystem::create_directory(planner->main_dir_);
@@ -1213,9 +1214,9 @@ bool PlanRobotPath(
     // If first plan request then use the new path as it is
     //=========================================================
 
-    // ROS_INFO("BEFORE PREPROCESS");
+    ROS_INFO("BEFORE PREPROCESS");
     PostProcessPath(planner, path, planner->interp_resolution_, intercept_time, params.shortcut_prerc);
-    // ROS_INFO("AFTER PREPROCESS");
+    ROS_INFO("AFTER PREPROCESS");
     // printf("new path:\n");
     // for (const auto& wp : new_path) {
     //     ROS_INFO_STREAM("waypoint: " << wp);
@@ -2065,7 +2066,6 @@ bool QueryConstTimePlanner(
             }
             else {
                 for (auto map_id : map_ids) {
-                    printf("3. map id %d\n", map_id);
                     path_id = planner->object_graph.getPathId(map_id, object_state_grid);
                     if (path_id.first == -1) {
                         continue;
@@ -2583,6 +2583,135 @@ bool QueryRandomTestsNormalPlanner(
         if (!ret) {
             ROS_INFO("QueryRandomTestsNormalPlanner test %d failed",i);
             failed_count++;
+        }
+
+
+        ofs << ret << ' ';
+        double cost = 0;
+        if (ret) {
+            cost = path.back().back();
+        }
+        ofs << planner->egraph_planner->get_n_expands() << ' ';
+        ofs << planner->egraph_planner->get_final_eps_planning_time() << ' ';
+        ofs << cost << '\n';
+
+        planner->current_path_.clear();
+    }
+    ROS_INFO("Total failures: %d", failed_count);
+    ofs.close();
+
+    return true;
+}
+
+bool QueryRandomTestsEgraphPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests)
+{
+    // Construct egraph first
+    int num_eg = 5;
+    std::string egraph_dir = "/home/fislam/egraph/";
+    auto sys_ret = system(("exec rm -r " + egraph_dir + "*").c_str());
+    int count = 0;
+    while (count < num_eg) {
+        auto state_id = planner->hkey_dijkstra.sampleObjectState(0);
+        if (state_id == -1) {
+            return false;
+        }
+        auto object_state = planner->object_graph.extractState(state_id);
+
+        // ROS_INFO("#######    Query object state: %.2f, %.2f, %f    id: %d     Dirty count: %d   #######", 
+        //         object_state[0], object_state[1], object_state[2], state_id);
+
+        auto object_pose = ComputeObjectPose(object_state, height);
+        auto goal_pose = object_pose * grasps[0].inverse();
+
+        // update collision checker for the new object pose
+        planner->manip_checker->setObjectInitialPose(object_pose);
+
+        // clear all memory
+        planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+
+        if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+            ROS_ERROR("Failed to initialize Generic Egraph heuristic");
+            return false;
+        }
+
+        std::vector<smpl::RobotState> path;
+        double intercept_time;
+        PlanPathParams params;
+        params.allowed_time = 10;
+        params.rc_constrained = false;
+        params.only_check_success = false;
+
+        bool ret = PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params);
+        if (!ret) {
+            continue;
+        }
+
+        moveit_msgs::RobotTrajectory root_traj;
+        ConvertJointVariablePathToJointTrajectory(
+            planner->robot_model,
+            path,
+            start_state.joint_state.header.frame_id,
+            start_state.multi_dof_joint_state.header.frame_id,
+            start_state,
+            root_traj);
+
+        WritePath(planner->robot_model, start_state, root_traj, egraph_dir, intercept_time);
+        count++;
+    }
+
+    ROS_INFO("Generated experiences %zu", num_eg);
+    getchar();
+
+    // Start running tests
+
+    int failed_count = 0;
+    std::ofstream ofs("/home/fislam/rss_stats/egraph_random.csv");
+    for (int i = 0; i < num_tests; ++i) {
+        printf("Running test: %d\n", i);
+        auto state_id = planner->hkey_dijkstra.sampleObjectState(0);
+        if (state_id == -1) {
+            return false;
+        }
+        auto object_state = planner->object_graph.extractState(state_id);
+
+        // ROS_INFO("#######    Query object state: %.2f, %.2f, %f    id: %d     Dirty count: %d   #######", 
+        //         object_state[0], object_state[1], object_state[2], state_id);
+
+        auto object_pose = ComputeObjectPose(object_state, height);
+        auto goal_pose = object_pose * grasps[0].inverse();
+
+        // update collision checker for the new object pose
+        planner->manip_checker->setObjectInitialPose(object_pose);
+
+        // clear all memory
+        planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+        planner->manip_graph.eraseExperienceGraph();
+        planner->manip_graph.loadExperienceGraph(egraph_dir);
+
+        if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+            ROS_ERROR("Failed to initialize Generic Egraph heuristic");
+            return false;
+        }
+
+        std::vector<smpl::RobotState> path;
+        double intercept_time;
+        PlanPathParams params;
+        params.allowed_time = 10;
+        params.rc_constrained = false;
+        params.only_check_success = false;
+
+        bool ret = PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params);
+        if (!ret) {
+            ROS_INFO("QueryRandomTestsEgraphPlanner test %d failed",i);
+            failed_count++;
+        }
+        else {
+            ROS_INFO("Success");
         }
 
 
