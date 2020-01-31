@@ -179,6 +179,13 @@ bool QueryAllTestsPlanner(
     const std::vector<Eigen::Affine3d>& grasps,
     double height);
 
+bool QueryReplanningTestsPerceptionPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& home_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests);
+
 bool QueryReplanningTestsPlanner(
     ConveyorPlanner* planner,
     const moveit_msgs::RobotState& start_state,
@@ -192,6 +199,15 @@ bool QueryRandomTestsNormalPlanner(
     const std::vector<Eigen::Affine3d>& grasps,
     double height,
     int num_tests);
+
+bool QueryEgraphPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    const ObjectState& object_state,
+    double height,
+    moveit_msgs::RobotTrajectory* trajectory,
+    double& intercept_time);
 
 bool QueryRandomTestsEgraphPlanner(
     ConveyorPlanner* planner,

@@ -1243,9 +1243,9 @@ int main(int argc, char* argv[])
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_QUERY;
 
-    // ExecutionMode execution_mode = ExecutionMode::SIMULATION;
+    ExecutionMode execution_mode = ExecutionMode::SIMULATION;
     // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_HARDCODED;
-    ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
+    // ExecutionMode execution_mode = ExecutionMode::REAL_ROBOT_PERCEPTION;
 
     //////////////////////////////////////
     //   Initialize Conveyor Planner    //
@@ -1280,7 +1280,7 @@ int main(int argc, char* argv[])
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.40, 1.25, -2.443461 }; //{0.50, 1.37, 1.134464}; // invalid path example
+    std::vector<double> object_state = {0.45, 1.25, 0.0}; //{0.50, 1.37, 1.134464}; // invalid path example
 
     moveit_msgs::RobotTrajectory traj;
 
@@ -1410,6 +1410,15 @@ int main(int argc, char* argv[])
         //         100);
 
         // return 1;
+
+        planner_mode = PlannerMode::CONST_TIME_QUERY;
+        ret_plan = QueryReplanningTestsPerceptionPlanner(
+                    &conveyor_planner,
+                    start_state,
+                    grasps,
+                    object_height,
+                    100);
+        return 1;
 
         switch (planner_mode) {
         case PlannerMode::CONST_TIME_QUERY:

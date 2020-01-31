@@ -233,7 +233,7 @@ void ConveyorManipLattice::GetSuccs(
     SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
 
     auto* vis_name = "expansion";
-    SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
+    SV_SHOW_DEBUG_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
 
     int goal_succ_count = 0;
 
@@ -517,7 +517,7 @@ auto ConveyorManipLattice::getMapIds(const RobotState& state)
     if (it != m_start_to_map_id.end()) {
         return it->second;
     }
-    printf("No map ids found\n");
+    printf("No map ids found in map of size %zu\n", m_start_to_map_id.size());
     return {};
 }
 
@@ -536,6 +536,7 @@ bool ConveyorManipLattice::loadStartToMapIdMap(std::string filepath)
     m_start_to_map_id.clear();
     std::ifstream ifs(filepath + "/start_to_map_id_map");
     if(!ifs.is_open()) {
+        SMPL_ERROR("Failed to load start_to_map_id_map");
         return false;
     }
     boost::archive::text_iarchive iarch(ifs);

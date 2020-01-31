@@ -16,14 +16,14 @@ initial_configuration:
 #   joint_state:
 #     - { name: torso_lift_joint,       position: 0.16825 }
 #     # - { name: torso_lift_joint,       position: 0.28 }
-#     - { name: r_shoulder_pan_joint,   position: 0.24014 }
-#     - { name: r_shoulder_lift_joint,  position: 0.277878 }
+#     - { name: r_shoulder_pan_joint,   position: -1.78024 }
+#     - { name: r_shoulder_lift_joint,  position: 0.527227136 }
 #     # - { name: r_shoulder_lift_joint,  position: 0.279253 }
-#     - { name: r_upper_arm_roll_joint, position: -1.64078 }
-#     - { name: r_elbow_flex_joint,     position: -1.09926 } #-0.2 }
-#     - { name: r_forearm_roll_joint,   position: 0.349068 }
-#     - { name: r_wrist_flex_joint,     position: -0.483538 } #-0.2 }
-#     - { name: r_wrist_roll_joint,     position: 0.0 }
+#     - { name: r_upper_arm_roll_joint, position: -1.8326 }
+#     - { name: r_elbow_flex_joint,     position: -0.593412 } #-0.2 }
+#     - { name: r_forearm_roll_joint,   position: 5.16617 }
+#     - { name: r_wrist_flex_joint,     position: -1.24 } #-0.2 }
+#     - { name: r_wrist_roll_joint,     position: 0.162316 }
 
 conveyor_object:
   # shape: Cylinder
@@ -45,7 +45,7 @@ conveyor_object:
 
   velocity:
     x: 0.0
-    y: -0.15  #-0.165
+    y: -0.2  #-0.165
     z: 0.0
 
   height: 0.7575

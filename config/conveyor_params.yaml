@@ -11,4 +11,4 @@ planning:
   time_bound: 0.2
   buffer_time: 0.2
 
-  replan_cutoff: 4.0 # keep it <=4.0 for 0.15 speed 
+  replan_cutoff: 3.5 # keep it <=4.0 for 0.15 speed 

@@ -6,7 +6,7 @@
     <arg unless="$(arg debug)" name="launch-prefix" value=""/>
     <arg     if="$(arg debug)" name="launch-prefix" value="gdb ex --args"/>
 
-    <node pkg="conveyor_manipulation_planner" type="callPlannerConveyorZTP" name="call_planner_conveyor_ztp"
+    <node pkg="conveyor_manipulation_planner" type="callPlannerConveyorZTP" name="call_planner_conveyor_ztp_preprocess"
             launch-prefix="$(arg launch-prefix)">
         args="$(find smpl_test)/config/xy_8_connected.mprim">
         <param name="planning_frame" value="odom_combined"/>

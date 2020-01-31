@@ -713,7 +713,7 @@ bool Init(
     // cpu_num = 3;
     // ROS_INFO("cpu_num: %d\n", cpu_num);
     // planner->main_dir_ = "/home/fislam/conveyor_data_" + std::to_string(cpu_num);
-    planner->main_dir_ = "/home/fislam/conveyor_data"; 
+    planner->main_dir_ = "/home/fislam/conveyor_data_robot"; 
     if (!boost::filesystem::exists(planner->main_dir_)) {
         // ROS_INFO("Create plan output directory %s", start_dir.native().c_str());
         boost::filesystem::create_directory(planner->main_dir_);
@@ -1045,7 +1045,6 @@ void PostProcessPath(
     double interpt_until = path[path.size() - 2].back();
     path = MakeInterpolatedTrajectory(path, resolution, interpt_until);
     // printf("Size of interpolated path: %zu\n", path.size());
-
     // unwind path
     for (size_t i = 1; i < path.size(); ++i) {
         for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
@@ -1214,9 +1213,9 @@ bool PlanRobotPath(
     // If first plan request then use the new path as it is
     //=========================================================
 
-    ROS_INFO("BEFORE PREPROCESS");
+    // ROS_INFO("BEFORE PREPROCESS");
     PostProcessPath(planner, path, planner->interp_resolution_, intercept_time, params.shortcut_prerc);
-    ROS_INFO("AFTER PREPROCESS");
+    // ROS_INFO("AFTER PREPROCESS");
     // printf("new path:\n");
     // for (const auto& wp : new_path) {
     //     ROS_INFO_STREAM("waypoint: " << wp);
@@ -1723,6 +1722,8 @@ bool PreprocessConveyorPlanner(
                     break;
                 }
             }
+
+            break;
             // ROS_INFO("     Remaining states after latching: %zu", G_rem.size());
             // for (auto id : G_rem) {
             //     ROS_INFO("     %d",id);
@@ -1906,7 +1907,7 @@ bool PlanPathUsingRootPath(
 	}
 
     PlanPathParams params;
-    params.allowed_time = planner->time_bound_ + 1e-3;
+    params.allowed_time = planner->time_bound_ + 1e-1;
     params.rc_constrained = false;
     params.shortcut_prerc = false;
     params.only_check_success = false;
@@ -2194,7 +2195,7 @@ bool QueryNormalPlanner(
 	}
 
     PlanPathParams params;
-    params.allowed_time = 1000.0;
+    params.allowed_time = 1.0;
     params.rc_constrained = false;
     params.shortcut_prerc = true;
     params.only_check_success = false;
@@ -2298,6 +2299,200 @@ bool QueryAllTestsPlanner(
 	return true;
 }
 
+static
+double rand_sign()
+{
+    return (rand() << 1) + (rand() & 1);
+}
+
+enum  Planner
+{
+    NORMAL = 0,
+    CONST_TIME,
+    EGRAPH
+};
+
+bool QueryReplanningTestsPerceptionPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& home_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    double height,
+    int num_tests)
+{
+    // Planner p = Planner::CONST_TIME;
+    // Planner p = Planner::NORMAL;
+    Planner p = Planner::EGRAPH;
+
+    int failed_count = 0;
+    // std::ofstream ofs("/home/fislam/rss_stats/const.csv");
+    // std::ofstream ofs("/home/fislam/rss_stats/normal.csv");
+    std::ofstream ofs("/home/fislam/rss_stats/egraph.csv");
+
+    // params
+    double noise_trans = 0.05;
+    double noise_yaw = 2 * M_PI;
+    double t_perception = 0.5;
+    double y_img = 1.4;
+    double x_min = 0.45;
+    double x_max = 0.55;
+    double y_min = 1.2;
+    double y_max = 1.29;
+    double t_buff = 0.4;
+
+    // **** Change for each alg ******//
+    double t_bound = 1.0;
+    //*******************************//
+
+    double t_offset = t_perception + t_bound + t_buff;
+
+    double y_plan = 1.25;
+
+    //***********Tests****************//
+    for (int tid = 0; tid < num_tests; ++tid) {
+    double x_plan = x_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(x_max-x_min)));
+    double yaw_plan = static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/2 * M_PI));
+
+    std::vector<double> object_state = {x_plan, y_plan, yaw_plan};
+
+        printf("Running test: %d\n", tid);
+        auto start_state = home_state;
+        moveit_msgs::RobotTrajectory traj;
+        double replan_state_time = 0.0;
+
+        //***********Replanning for the same run****************//
+        int qid = 0;
+        double xx_min = x_plan - 0.05;
+        double xx_max = x_plan + 0.04;
+        while (replan_state_time < planner->replan_cutoff_) {
+            if (qid > 0) {
+                // 1. update start
+                for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
+                    if (traj.joint_trajectory.points[i].time_from_start.toSec() >= replan_state_time) {
+                        for (size_t j = 0; j < 7; ++j) {
+                            start_state.joint_state.position[j + 1] = traj.joint_trajectory.points[i].positions[j];
+                        }
+                        start_state.joint_state.position[8] = replan_state_time;
+                        break;
+                    }
+                }
+
+                // 2. update goal
+                // double x_n = x_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(x_max-x_min)));
+                // double y_n = y_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(y_max-y_min)));
+                // double yaw_n = (static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/noise_yaw)));
+                // printf("noise: %f %f %f \n", x_n, y_n, yaw_n);
+                object_state[0] = xx_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(xx_max-xx_min)));
+                object_state[1] = y_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(y_max-y_min)));
+                object_state[2] = (static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/noise_yaw)));
+            }
+
+            auto object_state_grid = planner->object_graph.getDiscreteCenter(object_state);
+
+            printf("\n");
+            ROS_INFO("*******************************************************************");
+            ROS_INFO("********   Object State: %.2f, %.2f, %f \t   ********",
+                                object_state_grid[0], object_state_grid[1], object_state_grid[2]);
+            ROS_INFO("*******************************************************************");
+
+            ROS_INFO("Plan/Replan from %f",start_state.joint_state.position[8]);
+
+            if (start_state.joint_state.position[8] > planner->replan_cutoff_) {
+                ROS_ERROR("Attempted Replanning after replan cutoff %f", start_state.joint_state.position[8]);
+                break;
+            }
+
+            double intercept_time;
+            traj.joint_trajectory.points.clear();
+            auto start = smpl::clock::now();
+
+            // TODO: add switch statement here for different planners
+            bool ret;
+            switch (p) {
+            case Planner::CONST_TIME:
+            {
+                ret = QueryConstTimePlanner(
+                    planner,
+                    start_state,
+                    grasps,
+                    object_state_grid,
+                    height,
+                    &traj,
+                    intercept_time);
+                break;                
+            }
+            case Planner::NORMAL:
+            {
+                ret = QueryNormalPlanner(
+                    planner,
+                    start_state,
+                    grasps,
+                    object_state_grid,
+                    height,
+                    &traj,
+                    intercept_time);
+                break;                
+            }
+            case Planner::EGRAPH:
+            {
+                ret = QueryEgraphPlanner(
+                    planner,
+                    start_state,
+                    grasps,
+                    object_state_grid,
+                    height,
+                    &traj,
+                    intercept_time);
+                break;
+            }
+            }
+
+            auto end = smpl::clock::now();
+
+            // doing it to account for updategoal time
+            auto planning_time = std::chrono::duration<double>(end - start).count();
+
+            printf("planning_time %f\n", planning_time);
+
+            // if (planning_time > t_bound + t_buff) {
+            //     ret = false;
+            // }
+
+            ofs << ret << '\t';
+            double cost = 0;
+            if (ret) {
+                cost = traj.joint_trajectory.points.back().time_from_start.toSec();
+            }
+            ofs << start_state.joint_state.position[8] << '\t';
+            ofs << planner->egraph_planner->get_n_expands() << '\t';
+            // ofs << planning_time << '\t';
+            // if (p != Planner::EGRAPH) {
+                ofs << planner->egraph_planner->get_final_eps_planning_time() << '\t';
+            // }
+            ofs << cost << '\t' << '\t';
+
+            // getchar();
+            if (ret) {
+                ROS_INFO("Request %d successful", qid);
+            }
+            else {
+                ROS_WARN("Request %d failed", qid);
+                failed_count++;
+                // break;
+            }
+
+            replan_state_time += t_offset + planner->replan_resolution_;     // may be add some buffer here?
+            qid++;
+        }   // replan cycle end
+
+        ofs << '\n';
+
+        planner->current_path_.clear();
+    }   // tests end
+    ROS_INFO("Failed count %f", failed_count);
+
+    return true;
+}
+
 bool QueryReplanningTestsPlanner(
     ConveyorPlanner* planner,
     const moveit_msgs::RobotState& home_state,
@@ -2326,7 +2521,7 @@ bool QueryReplanningTestsPlanner(
                 double LO = (qid - 1) * range;
                 double HI = LO + range;
                 printf("low %f high %f range %f\n", LO, HI, range);
-                double replan_time = LO + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(HI-LO)));
+                double replan_time = LO + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(HI-LO)));
 
                 for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
                     if (traj.joint_trajectory.points[i].time_from_start.toSec() >= replan_time) {
@@ -2600,6 +2795,55 @@ bool QueryRandomTestsNormalPlanner(
     ROS_INFO("Total failures: %d", failed_count);
     ofs.close();
 
+    return true;
+}
+
+bool QueryEgraphPlanner(
+    ConveyorPlanner* planner,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    const ObjectState& object_state,
+    double height,
+    moveit_msgs::RobotTrajectory* trajectory,
+    double& intercept_time)
+{
+    std::string egraph_dir = "/home/fislam/egraph/";
+    auto object_pose = ComputeObjectPose(object_state, height);
+    auto goal_pose = object_pose * grasps[0].inverse();
+
+    // update collision checker for the new object pose
+    planner->manip_checker->setObjectInitialPose(object_pose);
+
+    // clear all memory
+    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+    planner->manip_graph.eraseExperienceGraph();
+    planner->manip_graph.loadExperienceGraph(egraph_dir);
+
+    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+        ROS_ERROR("Failed to initialize Generic Egraph heuristic");
+        return false;
+    }
+
+    std::vector<smpl::RobotState> path;
+    PlanPathParams params;
+    params.allowed_time = 1.0;
+    params.rc_constrained = false;
+    params.only_check_success = false;
+
+    bool ret = PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params);
+    if (!ret) {
+        ROS_INFO("QueryEgraphPlanner test failed");
+        return false;
+    }
+    ROS_INFO("Success");
+
+    ConvertJointVariablePathToJointTrajectory(
+        planner->robot_model,
+        path,
+        start_state.joint_state.header.frame_id,
+        start_state.multi_dof_joint_state.header.frame_id,
+        start_state,
+        *trajectory);
     return true;
 }
 

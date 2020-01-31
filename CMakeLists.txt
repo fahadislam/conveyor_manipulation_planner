@@ -16,7 +16,7 @@ find_package(
         moveit_ros_planning_interface)
 
 find_package(smpl REQUIRED)
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package (Eigen3 REQUIRED NO_MODULE)
 find_package(fcl REQUIRED)
 
 find_package(Boost REQUIRED COMPONENTS filesystem serialization)
