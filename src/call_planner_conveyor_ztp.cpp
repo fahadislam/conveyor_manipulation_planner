@@ -1414,10 +1414,10 @@ int main(int argc, char* argv[])
         planner_mode = PlannerMode::CONST_TIME_QUERY;
         ret_plan = QueryReplanningTestsPerceptionPlanner(
                     &conveyor_planner,
-                    start_state,
+                    home_state,
                     grasps,
                     object_height,
-                    100);
+                    50);
         return 1;
 
         switch (planner_mode) {

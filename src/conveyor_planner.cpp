@@ -48,7 +48,9 @@
 #include <smpl/stl/memory.h>
 #include <smpl/time.h>
 #include <smpl/angles.h>
+#include <random>
 
+using namespace std;
 // #include "conversions.h"
 
 const char* CP_LOGGER = "conveyor";
@@ -2195,7 +2197,7 @@ bool QueryNormalPlanner(
 	}
 
     PlanPathParams params;
-    params.allowed_time = 1.0;
+    params.allowed_time = 2.0;
     params.rc_constrained = false;
     params.shortcut_prerc = true;
     params.only_check_success = false;
@@ -2320,42 +2322,57 @@ bool QueryReplanningTestsPerceptionPlanner(
     int num_tests)
 {
     // Planner p = Planner::CONST_TIME;
-    // Planner p = Planner::NORMAL;
-    Planner p = Planner::EGRAPH;
+    Planner p = Planner::NORMAL;
+    // Planner p = Planner::EGRAPH;
 
     int failed_count = 0;
     // std::ofstream ofs("/home/fislam/rss_stats/const.csv");
-    // std::ofstream ofs("/home/fislam/rss_stats/normal.csv");
-    std::ofstream ofs("/home/fislam/rss_stats/egraph.csv");
+    std::ofstream ofs("/home/fislam/rss_stats/normal.csv");
+    // std::ofstream ofs("/home/fislam/rss_stats/egraph.csv");
 
     // params
     double noise_trans = 0.05;
     double noise_yaw = 2 * M_PI;
-    double t_perception = 0.5;
-    double y_img = 1.4;
-    double x_min = 0.45;
-    double x_max = 0.55;
-    double y_min = 1.2;
-    double y_max = 1.29;
+    double t_perception = 0.4;
+    double y_img = 1.48;
+    double x_min = 0.4;
+    double x_max = 0.59;
+    // double y_min = 1.2;
+    // double y_max = 1.29;
     double t_buff = 0.4;
+    double speed = 0.2;
 
     // **** Change for each alg ******//
-    double t_bound = 1.0;
+    double t_bound = 2.0;
     //*******************************//
 
     double t_offset = t_perception + t_bound + t_buff;
 
-    double y_plan = 1.25;
+    double y_plan = y_img - (speed * t_offset);
+
+    if (p == Planner::CONST_TIME) {
+        y_plan = 1.25;
+    }
+
+
+    mt19937 gen(1);
+    uniform_real_distribution<double> distrx(x_min, x_max);
+    uniform_real_distribution<double> distryaw(- M_PI, M_PI);
 
     //***********Tests****************//
     for (int tid = 0; tid < num_tests; ++tid) {
-    double x_plan = x_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(x_max-x_min)));
-    double yaw_plan = static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/2 * M_PI));
+        // double x_plan = x_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(x_max-x_min)));
+        // double yaw_plan = static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/2 * M_PI));
+        double x_plan = distrx(gen);
+        double yaw_plan = distryaw(gen);
 
-    std::vector<double> object_state = {x_plan, y_plan, yaw_plan};
+        // printf("x yaw %f %f\n", x_plan, yaw_plan);
+        // getchar();
 
-        printf("Running test: %d\n", tid);
+        std::vector<double> object_state = {x_plan, y_plan, yaw_plan};
+
         auto start_state = home_state;
+        printf("Running test: %d start time %f \n", tid, home_state.joint_state.position[8]);
         moveit_msgs::RobotTrajectory traj;
         double replan_state_time = 0.0;
 
@@ -2363,27 +2380,32 @@ bool QueryReplanningTestsPerceptionPlanner(
         int qid = 0;
         double xx_min = x_plan - 0.05;
         double xx_max = x_plan + 0.04;
+        double yy_min = y_plan - 0.05;
+        double yy_max = y_plan + 0.04;
+        uniform_real_distribution<double> distrxx(xx_min, xx_max);
+        uniform_real_distribution<double> distryy(yy_min, yy_max);
         while (replan_state_time < planner->replan_cutoff_) {
             if (qid > 0) {
                 // 1. update start
+                start_state.joint_state.position[8] = replan_state_time;
                 for (size_t i = 0; i < traj.joint_trajectory.points.size(); ++i) {
                     if (traj.joint_trajectory.points[i].time_from_start.toSec() >= replan_state_time) {
                         for (size_t j = 0; j < 7; ++j) {
                             start_state.joint_state.position[j + 1] = traj.joint_trajectory.points[i].positions[j];
                         }
-                        start_state.joint_state.position[8] = replan_state_time;
+                        // printf("SETTING START TIME %f\n", replan_state_time);
                         break;
                     }
                 }
 
                 // 2. update goal
-                // double x_n = x_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(x_max-x_min)));
-                // double y_n = y_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(y_max-y_min)));
-                // double yaw_n = (static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/noise_yaw)));
-                // printf("noise: %f %f %f \n", x_n, y_n, yaw_n);
-                object_state[0] = xx_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(xx_max-xx_min)));
-                object_state[1] = y_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(y_max-y_min)));
-                object_state[2] = (static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/noise_yaw)));
+                // object_state[0] = xx_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(xx_max-xx_min)));
+                // object_state[1] = y_min + static_cast <double> (rand()) /( static_cast <double> (RAND_MAX/(y_max-y_min)));
+                // object_state[2] = (static_cast <double> (rand()) / (static_cast <double> (RAND_MAX/noise_yaw)));
+                object_state[0] = distrxx(gen);
+                object_state[1] = distryy(gen);
+                object_state[2] = distryaw(gen);
+
             }
 
             auto object_state_grid = planner->object_graph.getDiscreteCenter(object_state);
@@ -2401,12 +2423,12 @@ bool QueryReplanningTestsPerceptionPlanner(
                 break;
             }
 
-            double intercept_time;
             traj.joint_trajectory.points.clear();
             auto start = smpl::clock::now();
 
             // TODO: add switch statement here for different planners
             bool ret;
+            double intercept_time;
             switch (p) {
             case Planner::CONST_TIME:
             {
@@ -2826,7 +2848,7 @@ bool QueryEgraphPlanner(
 
     std::vector<smpl::RobotState> path;
     PlanPathParams params;
-    params.allowed_time = 1.0;
+    params.allowed_time = 2.0;
     params.rc_constrained = false;
     params.only_check_success = false;
 
