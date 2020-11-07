@@ -158,13 +158,13 @@ void HKeyDijkstra::setUncoveredStates(const std::vector<int>& state_ids)
     m_subregions.clear();
 }
 
-auto HKeyDijkstra::getUncoveredStates()
+auto HKeyDijkstra::getAllStates()
     -> std::vector<int>
 {
     return m_uc_states;
 }
 
-auto HKeyDijkstra::getRemainingStates()
+auto HKeyDijkstra::getUncoveredStates()
     -> std::vector<int>
 {
     return m_dirty_states;

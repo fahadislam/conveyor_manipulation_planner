@@ -1234,10 +1234,10 @@ int main(int argc, char* argv[])
 
     // Set Mode
 
-    PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
+    // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
@@ -1411,14 +1411,14 @@ int main(int argc, char* argv[])
 
         // return 1;
 
-        planner_mode = PlannerMode::CONST_TIME_QUERY;
-        ret_plan = QueryReplanningTestsPerceptionPlanner(
-                    &conveyor_planner,
-                    home_state,
-                    grasps,
-                    object_height,
-                    50);
-        return 1;
+        // planner_mode = PlannerMode::CONST_TIME_QUERY;
+        // ret_plan = QueryReplanningTestsPerceptionPlanner(
+        //             &conveyor_planner,
+        //             home_state,
+        //             grasps,
+        //             object_height,
+        //             50);
+        // return 1;
 
         switch (planner_mode) {
         case PlannerMode::CONST_TIME_QUERY:

@@ -1065,7 +1065,7 @@ bool PlanRobotPath(
     const Eigen::Affine3d& object_pose,
     std::vector<smpl::RobotState>& path,
     double& intercept_time,
-    PlanPathParams params)
+    const PlanPathParams& params)
 {
     //==============================================================================//
     // By default the collision object remains inflated                             //
@@ -1269,6 +1269,48 @@ auto ComputeObjectPose(
     return object_pose;
 }
 
+bool PlanPathUsingRootPath(
+    ConveyorPlanner* planner,
+    const std::string& egraph_dir,
+    const moveit_msgs::RobotState& start_state,
+    const std::vector<Eigen::Affine3d>& grasps,
+    const ObjectState& object_state_grid,
+    double height,
+    std::vector<smpl::RobotState>& path,
+    double& intercept_time,
+    const PlanPathParams& params)
+{
+    ROS_INFO("#######    PlanPathUsingRootPath: Query object state: %.2f %.2f %f   #######", 
+            object_state_grid[0], object_state_grid[1], object_state_grid[2]);
+
+    auto object_pose = ComputeObjectPose(object_state_grid, height);
+    auto goal_pose = object_pose * grasps[0].inverse();
+
+    // update collision checker for the new object pose
+    planner->manip_checker->setObjectInitialPose(object_pose);
+
+    // clear all memory
+    planner->manip_graph.eraseExperienceGraph();
+    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+
+    // load experience graph
+    if (!egraph_dir.empty()) {
+        planner->manip_graph.loadExperienceGraph(egraph_dir);
+    }
+    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
+        ROS_ERROR("Failed to initialize Generic Egraph heuristic");
+        return false;
+    }
+
+    if (!PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params)) {
+        ROS_INFO("Unable to plan to the center within time %f",
+        planner->time_bound_);
+        return false;
+    }
+
+    return true;
+}
+
 bool ComputeRootPaths(
     ConveyorPlanner* planner,
     const moveit_msgs::RobotState& start_state,
@@ -1276,28 +1318,15 @@ bool ComputeRootPaths(
     const std::vector<Eigen::Affine3d>& grasps,
     double height,
     std::vector<std::vector<smpl::RobotState>>& paths,
-    std::vector<int>& G_REM,
+    std::vector<int>& G_UNCOV,
     std::vector<int>& G_COV)
 {
-    //===================================
-    // Compute Root Paths Begin
-    //===================================
-    // Compute paths for goal region G_REM
-    // Init uncovered state by G_REM instead of G_Full
+    /////////////////////////////////////////////
+    /// Compute paths for goal region G_UNCOV ///
+    /////////////////////////////////////////////
+
     // Clears dirty/covered statuses, clears dirty list, sub regions
-    planner->hkey_dijkstra.setUncoveredStates(G_REM);
-
-    /////////////////////////////////////////////
-    //                 MAIN LOOP               //
-    /////////////////////////////////////////////
-
-
-    // - Mark an object state as "dirty" if:
-    //      a) fails to plan from scratch
-    //              or
-    //      b) can plan from scratch but can't use the same experience to plan by reuse
-    // - A covered state might be a dirty state
-    // - Tertminate preprocessing when there are no more uncovered states
+    planner->hkey_dijkstra.setUncoveredStates(G_UNCOV);
 
     int center_count = 0;
     std::string start_dir = planner->main_dir_ + "/start_" + std::to_string(start_id);
@@ -1305,9 +1334,8 @@ bool ComputeRootPaths(
         // ROS_INFO("Create plan output directory %s", start_dir.native().c_str());
         boost::filesystem::create_directory(start_dir);
     }
-    auto root_egraph_dir = start_dir + "/paths/root/";
 
-    // printf("done count %d\n", start_id); getchar();
+    std::string rc_egraph_dir = start_dir + "/paths/root/";
     while(true) {
 
         ///////////////////////////////////////////////
@@ -1332,20 +1360,6 @@ bool ComputeRootPaths(
         // Compute path to object goal and store experience //
         //////////////////////////////////////////////////////
 
-        auto object_pose = ComputeObjectPose(center_state, height);
-        auto goal_pose = object_pose * grasps[0].inverse();
-
-        // update collision checker for the new object pose
-        planner->manip_checker->setObjectInitialPose(object_pose);
-
-        // clear all memory
-        planner->manip_graph.eraseExperienceGraph();
-        planner->egraph_planner->force_planning_from_scratch_and_free_memory();
-
-        if (center_count != 0) {
-            planner->manip_graph.loadExperienceGraph(root_egraph_dir);
-        }
-
         moveit_msgs::RobotTrajectory root_traj;
         double intercept_time;
 
@@ -1358,14 +1372,25 @@ bool ComputeRootPaths(
             params.shortcut_prerc = true;
         }
 
-        std::vector<smpl::RobotState> path;
-        if (!PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params)) {
-            // ROS_INFO("Unable to plan to the center within time %f",
-            //     params.allowed_time);
+        auto egraph_dir = rc_egraph_dir;
+        if (center_count == 0) {
+            egraph_dir = "";
+        }
 
+        std::vector<smpl::RobotState> path;
+        if (!PlanPathUsingRootPath(
+                planner,
+                egraph_dir,
+                start_state,
+                grasps,
+                center_state,
+                height,
+                path,
+                intercept_time,
+                params)){
             planner->hkey_dijkstra.markDirtyState(state_id);
             planner->hkey_dijkstra.removeStateFromUncoveredList(state_id);
-            continue;
+            continue;           
         }
 
         ConvertJointVariablePathToJointTrajectory(
@@ -1378,18 +1403,11 @@ bool ComputeRootPaths(
 
         // write path to file
         boost::filesystem::create_directory(start_dir + "/paths/");
-        auto egraph_dir = start_dir + "/paths/" + std::to_string(center_count);
-        // auto sys_ret = system(("exec rm -r " + egraph_dir + "/*").c_str());
-
+        egraph_dir = start_dir + "/paths/" + std::to_string(center_count);
         WritePath(planner->robot_model, start_state, root_traj, egraph_dir, intercept_time);
-        // printf("first\n"); getchar();
-        // if (intercept_time < 0.1) {
-        //     printf("first\n");
-        //     getchar();
-        // }
 
         if (center_count == 0) {
-            WritePath(planner->robot_model, start_state, root_traj, root_egraph_dir, planner->replan_cutoff_);
+            WritePath(planner->robot_model, start_state, root_traj, rc_egraph_dir, planner->replan_cutoff_);
         }
 
         //////////////////////////////////
@@ -1422,21 +1440,6 @@ bool ComputeRootPaths(
             //     Compute path to next state    //
             ///////////////////////////////////////
 
-            // compute correspinding pose for center_state;
-            auto object_pose = ComputeObjectPose(object_state, height);
-            auto goal_pose = object_pose * grasps[0].inverse();
-
-            // update collision checker for the new object pose
-            planner->manip_checker->setObjectInitialPose(object_pose);
-
-            // refresh all datastructures
-            planner->manip_graph.eraseExperienceGraph();
-            planner->egraph_planner->force_planning_from_scratch_and_free_memory();
-            planner->manip_graph.loadExperienceGraph(egraph_dir);
-
-            std::vector<smpl::RobotState> path;
-            double intercept_time;
-
             PlanPathParams params;
             params.allowed_time = planner->time_bound_;
             params.rc_constrained = true;
@@ -1446,7 +1449,19 @@ bool ComputeRootPaths(
                 params.only_check_success = false;
                 params.shortcut_prerc = true;
             }
-            if (!PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params)) {
+
+            double intercept_time;
+            std::vector<smpl::RobotState> path;
+            if (!PlanPathUsingRootPath(
+                    planner,
+                    egraph_dir,
+                    start_state,
+                    grasps,
+                    object_state,
+                    height,
+                    path,
+                    intercept_time,
+                    params)){
                 //=========================================================================//
                 // dont need to mark state as dirty here, can just store the original path //
                 //=========================================================================//
@@ -1503,9 +1518,9 @@ bool ComputeRootPaths(
     // ROS_INFO("No. center states %d", center_count);
 
     // Get remaining states
-    G_REM = planner->hkey_dijkstra.getRemainingStates();
+    G_UNCOV = planner->hkey_dijkstra.getUncoveredStates();
     // ROS_INFO("Remaining states:");
-    // for (auto id : G_REM) {
+    // for (auto id : G_UNCOV) {
     //     ROS_INFO(" %d",id);
     // }
     auto G_COV_ = planner->hkey_dijkstra.getCoveredStates();
@@ -1646,15 +1661,15 @@ bool PreprocessConveyorPlanner(
     // const int start_id,
     const std::vector<Eigen::Affine3d>& grasps,
     double height,
-    std::vector<int>& G_REM,
+    std::vector<int>& G_UNCOV,
     std::vector<int>& G_COV)
 {
     double t_start = start_state.joint_state.position[8];
 
     printf("\n");
     ROS_INFO("###################    Start id: %d, Start time: %f    ###################", planner->start_id_, t_start);
-    ROS_INFO("Uncovered states: %zu", G_REM.size());
-    PrintRegion(G_REM, 1);
+    ROS_INFO("Uncovered states: %zu", G_UNCOV.size());
+    PrintRegion(G_UNCOV, 1);
 
     ROS_INFO("Covered states: %zu", G_COV.size());
     PrintRegion(G_COV, 1);
@@ -1669,12 +1684,12 @@ bool PreprocessConveyorPlanner(
         grasps,
         height,
         paths,
-        G_REM,
+        G_UNCOV,
         G_COV);
 
     ROS_INFO("Number of paths: %zu", paths.size());
-    ROS_INFO("Uncovered after ComputeRootPaths(): %zu", G_REM.size());
-    PrintRegion(G_REM, 1);
+    ROS_INFO("Uncovered after ComputeRootPaths(): %zu", G_UNCOV.size());
+    PrintRegion(G_UNCOV, 1);
     ROS_INFO("Covered after ComputeRootPaths(): %zu", G_COV.size());
     PrintRegion(G_COV, 1);
 
@@ -1690,12 +1705,12 @@ bool PreprocessConveyorPlanner(
         // Assuming replan cutoff respects discretization, stupid
         auto last_state_idx = GetStateIndexAfterTime(paths[i], planner->replan_cutoff_);
         double t = paths[i][last_state_idx].back();
-        auto G_rem = G_COV;
+        auto G_UNCOV = G_COV;
         auto G_i = planner->hkey_dijkstra.getSubregion(start_id_work, i);
-        planner->hkey_dijkstra.subtractStates(G_rem, G_i);
+        planner->hkey_dijkstra.subtractStates(G_UNCOV, G_i);
         auto G_cov = G_i;
-        ROS_INFO("     Uncovered init: %zu", G_rem.size());
-        PrintRegion(G_rem, 3);
+        ROS_INFO("     Uncovered init: %zu", G_UNCOV.size());
+        PrintRegion(G_UNCOV, 3);
         ROS_INFO("     Covered init: %zu", G_cov.size());
         PrintRegion(G_cov, 3);
         // getchar();
@@ -1710,27 +1725,27 @@ bool PreprocessConveyorPlanner(
                 if (CheckSnap(planner, start_new, planner->home_paths_[j], 1e-3)) {
                     ROS_INFO("             - Snap successful");
                     auto G_j = planner->hkey_dijkstra.getSubregion(0, j);
-                    planner->hkey_dijkstra.subtractStates(G_rem, G_j);
+                    planner->hkey_dijkstra.subtractStates(G_UNCOV, G_j);
                     planner->hkey_dijkstra.addStates(G_cov, G_j);
-                    ROS_INFO("             Uncovered after Snap: %zu", G_rem.size());
-                    PrintRegion(G_rem, 3);
+                    ROS_INFO("             Uncovered after Snap: %zu", G_UNCOV.size());
+                    PrintRegion(G_UNCOV, 3);
                     ROS_INFO("             Covered after Snap: %zu", G_cov.size());
                     PrintRegion(G_cov, 3);
                 }
                 else {
                     SMPL_WARN("             - Failed to snap");
                 }
-                if (G_rem.empty()) {
+                if (G_UNCOV.empty()) {
                     break;
                 }
             }
 
             break;
-            // ROS_INFO("     Remaining states after latching: %zu", G_rem.size());
-            // for (auto id : G_rem) {
+            // ROS_INFO("     Remaining states after latching: %zu", G_UNCOV.size());
+            // for (auto id : G_UNCOV) {
             //     ROS_INFO("     %d",id);
             // }
-            if (G_rem.empty()) {
+            if (G_UNCOV.empty()) {
                 ROS_INFO("         Snapping for Path %d covered everything at state %f", i, t);
                 break;
             }
@@ -1743,28 +1758,28 @@ bool PreprocessConveyorPlanner(
 
             // start_id_next++;
             planner->start_id_++;
-            size_t before_rem = G_rem.size();
+            size_t before_rem = G_UNCOV.size();
             auto ret = PreprocessConveyorPlanner(
                 planner,
                 start_state_next,
                 // start_id_next,
                 grasps,
                 height,
-                G_rem,
+                G_UNCOV,
                 G_cov);
-            size_t after_rem = G_rem.size();
+            size_t after_rem = G_UNCOV.size();
 
             if (after_rem == before_rem) {
                 // start_id_next--;
                 planner->start_id_--;
             }
 
-            ROS_INFO("         Start id: %d Path id: %d Uncovered after Preprocess: %zu", start_id_work, i, G_rem.size());
-            PrintRegion(G_rem, 2);
+            ROS_INFO("         Start id: %d Path id: %d Uncovered after Preprocess: %zu", start_id_work, i, G_UNCOV.size());
+            PrintRegion(G_UNCOV, 2);
             ROS_INFO("         Start id: %d Path id: %d Covered after Preprocess: %zu", start_id_work, i, G_cov.size());
             PrintRegion(G_cov, 2);
 
-            if (G_rem.empty()) {
+            if (G_UNCOV.empty()) {
                 ROS_INFO("         Preprocess for Path %d covered everything at state %f", i, t);
                 break;
             }
@@ -1789,7 +1804,7 @@ bool PreprocessConveyorPlannerMain(
     std::string cmd = "exec rm -r " + planner->main_dir_ + "/*";
     auto sys_ret = system(cmd.c_str());
 
-    auto G_full = planner->hkey_dijkstra.getUncoveredStates();
+    auto G_full = planner->hkey_dijkstra.getAllStates();
     std::vector<int> G_cov;
     // int start_id = 0;
     planner->start_id_ = 0;
@@ -1869,63 +1884,6 @@ auto MergePathsWithSnap(
     return path;
 }
 
-bool PlanPathUsingRootPath(
-	ConveyorPlanner* planner,
-	const moveit_msgs::RobotState& start_state,
-	const int map_id,
-	const std::pair<int, bool>& path_id,
-	const std::vector<Eigen::Affine3d>& grasps,
-    const ObjectState& object_state_grid,
-    double height,
-    std::vector<smpl::RobotState>& path,
-    double& intercept_time)
-{
-	if (path_id.first == -1) {
-		ROS_ERROR("Path to query state does not exist, period.");
-		return false;
-	}
-
-    ROS_INFO("#######    PlanPathUsingRootPath: Query object state: %.2f %.2f %f     Start id: %d Path id %d: #######", 
-            object_state_grid[0], object_state_grid[1], object_state_grid[2], map_id, path_id);
-
-    auto object_pose = ComputeObjectPose(object_state_grid, height);
-    auto goal_pose = object_pose * grasps[0].inverse();
-
-    // update collision checker for the new object pose
-    planner->manip_checker->setObjectInitialPose(object_pose);
-
-    // clear all memory
-    planner->manip_graph.eraseExperienceGraph();
-    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
-
-	// load experience graph
-    auto egraph_dir = planner->main_dir_ +  "/start_" + std::to_string(map_id)
-        + "/paths/" + std::to_string(path_id.first);
-
-    planner->manip_graph.loadExperienceGraph(egraph_dir);
-    if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
-    	ROS_ERROR("Failed to initialize Generic Egraph heuristic");
-    	return false;
-	}
-
-    PlanPathParams params;
-    params.allowed_time = planner->time_bound_ + 1e-1;
-    params.rc_constrained = false;
-    params.shortcut_prerc = false;
-    params.only_check_success = false;
-    if (path_id.second) {
-    	ROS_INFO("Singleton Path Query");
-    	params.singleton_dir = egraph_dir;
-    }
-    if (!PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params)) {
-		ROS_INFO("Unable to plan to the center within time %f",
-		planner->time_bound_);
-		return false;
-	}
-
-    return true;
-}
-
 bool QueryConstTimePlanner(
 	ConveyorPlanner* planner,
 	const moveit_msgs::RobotState& start_state,
@@ -1936,7 +1894,6 @@ bool QueryConstTimePlanner(
     double& intercept_time)
 {
 	auto object_state_grid = planner->object_graph.getDiscreteCenter(object_state);
-    // auto object_state_grid = object_state;
 
     printf("\n");
     ROS_INFO("*******************************************************************");
@@ -1977,30 +1934,45 @@ bool QueryConstTimePlanner(
     }
     home.push_back(planner->home_state_.joint_state.position.back());
 
+    // fill planning params
+    PlanPathParams params;
+    params.allowed_time = planner->time_bound_ + 1e-1;
+    params.rc_constrained = false;
+    params.shortcut_prerc = false;
+    params.only_check_success = false;
+
     //  1. check if it is the first planning request
     std::vector<smpl::RobotState> path;
 	std::pair<int, bool> path_id;
     bool ret = false;
     bool done = false;
     if (planner->current_path_.empty() /*|| start_state.joint_state.position[8] == 0.0*/) {
+    	ROS_INFO("First planning request received");
 		auto map_ids = planner->manip_graph.getMapIds(start);
         assert(map_ids.size() == 1);
         auto map_id = map_ids[0];
         
 		assert(map_id != -1);	// should be zero
-    	ROS_INFO("First planning request received");
 		path_id = planner->object_graph.getPathId(map_id, object_state_grid);
         printf("map id: %d path_id: %d\n", map_id, path_id.first);
+
+        auto egraph_dir = planner->main_dir_ +  "/start_" + std::to_string(map_id)
+            + "/paths/" + std::to_string(path_id.first);
+
+        if (path_id.second) {
+            ROS_INFO("Singleton Path Query");
+            params.singleton_dir = egraph_dir;
+        }
         ret = PlanPathUsingRootPath(
                 planner,
+                egraph_dir,
                 start_state,
-                map_id,
-                path_id,
                 grasps,
                 object_state_grid,
                 height,
                 path,
-                intercept_time);
+                intercept_time,
+                params);
         done = true;
 	}
 	if (!done) 
@@ -2009,12 +1981,12 @@ bool QueryConstTimePlanner(
 		auto state_first = planner->current_path_.front();
 		auto map_ids = planner->manip_graph.getMapIds(state_first);
         if (map_ids.empty()) {
-            ROS_WARN("The first state is not a replan state");
+            ROS_WARN("The first state on the current path is not a replan state");
         }
         else {
             printf("map ids size %zu\n", map_ids.size());
             for (auto map_id : map_ids) {
-                printf("2. map id %d\n", map_id);
+                printf("map id %d\n", map_id);
         		path_id = planner->object_graph.getPathId(map_id, object_state_grid);
                 if (path_id.first == -1) {
                     continue;
@@ -2024,7 +1996,7 @@ bool QueryConstTimePlanner(
         			ROS_WARN("The query state does not belong to the current root path");
         		}
         		else {
-        			ROS_INFO("The query state belongs to the same root path");
+        			ROS_INFO("The query state belongs to the current root path");
 
                     // reconstruct previous start state
                     auto start_state_prev = start_state;
@@ -2032,16 +2004,23 @@ bool QueryConstTimePlanner(
                         start_state_prev.joint_state.position[j + 1] = state_first[j];
                     }
 
+                    auto egraph_dir = planner->main_dir_ +  "/start_" + std::to_string(map_id)
+                        + "/paths/" + std::to_string(path_id.first);
+
+                    if (path_id.second) {
+                        ROS_INFO("Singleton Path Query");
+                        params.singleton_dir = egraph_dir;
+                    }
         			ret = PlanPathUsingRootPath(
         					planner,
+                            egraph_dir,
                             start_state_prev,
-        					map_id,
-        					path_id,
         					grasps,
         					object_state_grid,
         					height,
         					path,
-        					intercept_time);
+        					intercept_time,
+                            params);
 
                     auto start_idx = GetStateIndexAfterTime(path, start_state.joint_state.position[8]);
                     path = PreClipPath(path, start_idx);
@@ -2053,13 +2032,11 @@ bool QueryConstTimePlanner(
 	}
     if (!done) 
     {
-		// Back tracking;
+		ROS_INFO("Back Tracking!!");
         auto last_state_idx = GetStateIndexAfterTime(planner->current_path_, planner->replan_cutoff_);
         double t = planner->current_path_[last_state_idx].back();
 		// double t = planner->replan_cutoff_;
 		while (t >= start_state.joint_state.position[8]) {
-            printf("333333333333333333333\n");
-
 			// 3. Try replan from state at t
             auto start_idx = GetStateIndexAfterTime(planner->current_path_, start_state.joint_state.position[8]);
 			auto from_idx = GetStateIndexAtTime(planner->current_path_, t);
@@ -2081,16 +2058,23 @@ bool QueryConstTimePlanner(
                     for (size_t j = 0; j < 8; ++j) {
                         start_state_t.joint_state.position[j + 1] = planner->current_path_[from_idx][j];
                     }
+
+                    auto egraph_dir = planner->main_dir_ +  "/start_" + std::to_string(map_id)
+                        + "/paths/" + std::to_string(path_id.first);
+                    if (path_id.second) {
+                        ROS_INFO("Singleton Path Query");
+                        params.singleton_dir = egraph_dir;
+                    }
                     ret = PlanPathUsingRootPath(
                             planner,
+                            egraph_dir,
                             start_state_t,
-                            map_id,
-                            path_id,
                             grasps,
                             object_state_grid,
                             height,
                             path,
-                            intercept_time);
+                            intercept_time,
+                            params);
                     if (ret) {
                         auto to_idx = GetStateIndexAtTime(path, t);
                         path = MergePaths(planner->current_path_, path, start_idx, from_idx);
@@ -2102,11 +2086,7 @@ bool QueryConstTimePlanner(
                 }
                 ROS_WARN("The query state DOES NOT lie in the goal region of the new start state");
             }
-            printf("4444444444444444444\n");
             // 4. Try snap from state at t
-            // auto home_idx = GetStateIndexAtTime(planner->current_path_, start_state.joint_state.position[8]);
-            // printf("T CURRENT ISSSSSSSSSS %f %d start time %f snap time %f\n", start_state.joint_state.position[8], start_idx,
-                // planner->current_path_[start_idx].back(), planner->current_path_[from_idx].back());
             auto map_id_home = planner->manip_graph.getMapIds(home);
             assert(map_id_home.size() == 1);
             path_id = planner->object_graph.getPathId(map_id_home[0], object_state_grid);
@@ -2115,16 +2095,19 @@ bool QueryConstTimePlanner(
             }
             else {
                 ROS_INFO("The query state lies in the goal region of the home state");
+
+                auto egraph_dir = planner->main_dir_ +  "/start_" + std::to_string(map_id_home[0])
+                    + "/paths/" + std::to_string(path_id.first);
                 ret = PlanPathUsingRootPath(
                         planner,
+                        egraph_dir,
                         planner->home_state_,
-                        map_id_home[0],
-                        path_id,
                         grasps,
                         object_state_grid,
                         height,
                         path,
-                        intercept_time);
+                        intercept_time,
+                        params);
                 if (ret) {
                     auto to_idx = GetStateIndexAtTime(path, t);
                     if (!CheckSnap(planner, planner->current_path_[from_idx], path, 1e-3)) {
@@ -2697,6 +2680,7 @@ bool QueryRandomTestsConstTimePlanner(
     double height,
     int num_tests)
 {
+#if 0
     int failed_count = 0;
     std::ofstream ofs("/home/fislam/rss_stats/const_time_random.csv");
     for (int i = 0; i < num_tests; ++i) {
@@ -2753,6 +2737,7 @@ bool QueryRandomTestsConstTimePlanner(
 
     ROS_INFO("Total failures: %d", failed_count);
     ofs.close();
+#endif
 }
 
 bool QueryRandomTestsNormalPlanner(

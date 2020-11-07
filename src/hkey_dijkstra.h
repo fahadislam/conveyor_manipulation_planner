@@ -144,8 +144,8 @@ public:
     bool reinit_search();
 
     void setUncoveredStates(const std::vector<int>& state_ids);
+    auto getAllStates() -> std::vector<int>;
     auto getUncoveredStates() -> std::vector<int>;
-    auto getRemainingStates() -> std::vector<int>;
     auto getCoveredStates() -> std::vector<int>;
 
     void subtractStates(
