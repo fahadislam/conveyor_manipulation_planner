@@ -115,6 +115,7 @@ struct ConveyorPlanner
     double replan_cutoff_;
     moveit_msgs::RobotState home_state_;
     std::vector<std::vector<smpl::RobotState>> home_paths_;
+    std::vector<ObjectState> home_center_states_;
     std::vector<smpl::RobotState> current_path_;
     int current_path_id_;
     int start_id_;

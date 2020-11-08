@@ -1507,7 +1507,10 @@ bool ComputeRootPaths(
             iter++;
         }
         // if (covered_count > 0) {
-            center_count++;
+        center_count++;
+        if (planner->home_query) {
+            planner->home_center_states_.push_back(center_state);
+        }
         // }
         // ROS_INFO("No. center states %d", center_count);
 
@@ -1556,6 +1559,9 @@ bool ComputeRootPaths(
     if (planner->home_query) {
         planner->home_paths_ = paths;
     }
+    if (planner->home_paths_.size() != planner->home_center_states_.size()) {
+        ROS_ERROR("Problem"); getchar();
+    }
     planner->home_query = false;
     //=============================================
     // Compute Root Paths End
@@ -1588,8 +1594,8 @@ int GetStateIndexAfterTime(const std::vector<smpl::RobotState>& path, double t)
 
 bool CheckSnap(
     ConveyorPlanner* planner,
-    smpl::RobotState from_state,
-    std::vector<smpl::RobotState> path,
+    const smpl::RobotState from_state,
+    const std::vector<smpl::RobotState> path,
     double buffer) 
 {
     auto to_idx = GetStateIndexAtTime(path, from_state.back() + planner->replan_resolution_);
@@ -1633,10 +1639,10 @@ bool CheckSnap(
         ret = false;
     }
 
-    // if (!planner->manip_checker->isStateToStateValid(from_state, to_state)) {
-    //     ROS_WARN("Snap motion is in collision");
-    //     ret = false;
-    // }
+    if (!planner->manip_checker->isStateToStateValid(from_state, to_state)) {
+        ROS_WARN("Snap motion is in collision");
+        ret = false;
+    }
 
     return ret;
 }
@@ -1722,6 +1728,13 @@ bool PreprocessConveyorPlanner(
             ROS_INFO("         Start id: %d Path id: %d Time: %f", start_id_work, i, t);
             for (size_t j = 0; j < planner->home_paths_.size(); ++j) {
                 ROS_INFO("             Check snap to home path %d", j);
+                // set object init pose in cc based on new goal
+                auto object_state_grid = planner->object_graph.getDiscreteCenter(planner->home_center_states_[j]);
+                auto object_pose = ComputeObjectPose(object_state_grid, height);
+                auto goal_pose = object_pose * grasps[0].inverse();
+                planner->manip_checker->setObjectInitialPose(object_pose);
+                //
+
                 if (CheckSnap(planner, start_new, planner->home_paths_[j], 1e-3)) {
                     ROS_INFO("             - Snap successful");
                     auto G_j = planner->hkey_dijkstra.getSubregion(0, j);
@@ -2110,6 +2123,11 @@ bool QueryConstTimePlanner(
                         params);
                 if (ret) {
                     auto to_idx = GetStateIndexAtTime(path, t);
+                    // set object init pose in cc based on new goal
+                    auto object_pose = ComputeObjectPose(object_state_grid, height);
+                    auto goal_pose = object_pose * grasps[0].inverse();
+                    planner->manip_checker->setObjectInitialPose(object_pose);
+                    //
                     if (!CheckSnap(planner, planner->current_path_[from_idx], path, 1e-3)) {
                         ROS_ERROR("Snap failed, path does not exist");
                         return false;
@@ -2180,7 +2198,7 @@ bool QueryNormalPlanner(
 	}
 
     PlanPathParams params;
-    params.allowed_time = 2.0;
+    params.allowed_time = 10.0;
     params.rc_constrained = false;
     params.shortcut_prerc = true;
     params.only_check_success = false;

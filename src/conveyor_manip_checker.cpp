@@ -289,7 +289,6 @@ bool ConveyorManipChecker::isStateValid(
             return false;
         }
     }
-
     return true;
 }
 
