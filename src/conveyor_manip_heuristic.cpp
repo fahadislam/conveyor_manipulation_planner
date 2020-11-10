@@ -196,7 +196,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
 
         // double w = 2.5;
         double w = 5.0;
-        // printf("state: %d, angular distance %f time %f\n", state_id, computeAngularDistance(p, object_pose), w * t);
+        printf("state: %d, angular distance %f time %f\n", state_id, computeAngularDistance(p, object_pose), w * t);
         // getchar();
         // const double dist = computeAngularDistance(p, object_pose) + w * t;
         const double dist = std::max(computeAngularDistance(p, object_pose), w * t);
