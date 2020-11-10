@@ -259,8 +259,8 @@ bool ConveyorManipChecker::isStateValid(
     // 2. If away from goal then do crude check of start and finish states only
     // 3. If close to goal then do fine check of start and finish states only
 
-    smpl::RobotState state_positions(state.size() - 1);
-    std::copy(state.begin(), state.begin() + state.size() - 1, state_positions.begin());
+    smpl::RobotState state_positions(7);
+    std::copy(state.begin(), state.begin() + 7, state_positions.begin());
     
     Eigen::Affine3d pose_object;
 
@@ -313,11 +313,11 @@ bool ConveyorManipChecker::isStateToStateValid(
     // 2. If away from goal then do crude check of start and finish states only
     // 3. If close to goal then do fine check of start and finish states only
 
-    smpl::RobotState start_positions(start.size() - 1);
-    std::copy(start.begin(), start.begin() + start.size() - 1, start_positions.begin());
+    smpl::RobotState start_positions(7);
+    std::copy(start.begin(), start.begin() + 7, start_positions.begin());
 
-    smpl::RobotState finish_positions(finish.size() - 1);
-    std::copy(finish.begin(), finish.begin() + finish.size() - 1, finish_positions.begin());
+    smpl::RobotState finish_positions(7);
+    std::copy(finish.begin(), finish.begin() + 7, finish_positions.begin());
 
     // Interpolate path
     std::vector<smpl::RobotState> path;

@@ -37,6 +37,7 @@
 #include <smpl/spatial.h>
 
 #include "conveyor_manip_lattice.h"
+#include "conveyor_kdl_robot_model.h"
 
 namespace smpl {
 
@@ -77,6 +78,7 @@ private:
     PointProjectionExtension* m_point_ext = nullptr;
     ExtractRobotStateExtension* m_ers = nullptr;
     ConveyorObjectStateExtension* m_ecos = nullptr;
+    ForwardVelocityInterface* m_fd_iface = nullptr;
 
     double m_x_coeff = 1.0;
     double m_y_coeff = 1.0;

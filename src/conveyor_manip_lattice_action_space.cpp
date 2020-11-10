@@ -506,6 +506,7 @@ bool ConveyorManipLatticeActionSpace::getAction(
     }
 }
 
+#if 1
 bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     const RobotState& state,
     const MotionPrimitive& mp,
@@ -513,42 +514,112 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
 {
     action = mp.action;
     for (size_t i = 0; i < action.size(); ++i) {
-        action[i].push_back(0.0);   // time
+        // action[i].insert(action[i].end(), mp.action[i].size() + 1, 0.0);
+        action[i].resize(state.size());
     }
 
     ConveyorManipLattice* lattice = static_cast<ConveyorManipLattice*>(planningSpace());
     for (size_t i = 0; i < action.size(); ++i) {
-        if (action[i].size() != state.size()) {
-            return false;
-        }
+        // if (action[i].size() != state.size()) {
+        //     return false;
+        // }
 
         for (size_t j = 0; j < mp.action[i].size(); ++j) {
             action[i][j] = action[i][j] + state[j];
         }
 
         // add time steps respecting velocity limits
-        double max_time = 0.0;
-        for (size_t j = 0; j < mp.action[i].size(); ++j) {
-            auto from_pos = state[j];
-            auto to_pos = action[i][j];
-            auto vel = planningSpace()->robot()->velLimit(j);
-            if (vel <= 0.0) {
-                continue;
-            }
-            auto t = 0.0;
-            if (planningSpace()->robot()->isContinuous(j)) {
-                t = angles::shortest_angle_dist(from_pos, to_pos) / vel;
-            } else {
-                t = fabs(to_pos - from_pos) / vel;
-            }
-            max_time = std::max(max_time, t);
-            // max_time *= 0.5;
-        }
-        action[i][mp.action[i].size()] = state[mp.action[i].size()] + max_time;
+        // double max_time = 0.0;
+        // for (size_t j = 0; j < mp.action[i].size(); ++j) {
+        //     auto from_pos = state[j];
+        //     auto to_pos = action[i][j];
+        //     auto vel = planningSpace()->robot()->velLimit(j);
+        //     if (vel <= 0.0) {
+        //         continue;
+        //     }
+        //     auto t = 0.0;
+        //     if (planningSpace()->robot()->isContinuous(j)) {
+        //         t = angles::shortest_angle_dist(from_pos, to_pos) / vel;
+        //     } else {
+        //         t = fabs(to_pos - from_pos) / vel;
+        //     }
+        //     max_time = std::max(max_time, t);
+        //     // max_time *= 0.5;
+        // }
+
+        // time and velocities
+        // double a = 1.0;
+        // double t_prim;
+        // for (size_t j = 0; j < mp.action[i].size(); ++j) {
+        //     double vi = state[7 + j];
+        //     double vf = std::sqrt(2 * a * mp.action[i][j] - vi * vi);   // handles +ve and _ve a
+        //     double t = (vf - vi) / a;
+        //     printf("vf %f vi %f t %f s %f\n", vf, vi, t, mp.action[i][j]);
+        //     if (t > 1e-6) {
+        //         t_prim = t;
+        //         action[i][j + 7] = vf;
+        //     }
+        //     else {
+        //         action[i][j + 7] = vi;   
+        //     }
+        // }
+        action[i][14] = state[14] + 0.1;//t_prim;
+        // action[i][mp.action[i].size()] = state[mp.action[i].size()] + max_time;
     }
     return true;
 }
+#else
 
+bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
+    const RobotState& state,
+    const MotionPrimitive& mp,
+    Action& action)
+{
+    action = mp.action;
+    for (size_t i = 0; i < action.size(); ++i) {
+        // action[i].insert(action[i].end(), mp.action[i].size() + 1, 0.0);
+        action[i].resize(state.size());
+    }
+
+    for (size_t i = 0; i < action.size(); ++i) {
+        // if (action[i].size() != state.size()) {
+        //     return false;
+        // }
+
+        // positions
+        double t = 0.2;
+        for (size_t j = 0; j < mp.action[i].size(); ++j) {
+            // action[i][j] = action[i][j] + state[j];
+            double V_0 = state[mp.action[i].size() + j];
+            // double t = state[mp.action[i].size() * 2];
+            double P_0 = state[j];
+            double a = mp.action[i][j];
+            double P_1;
+            P_1 = P_0 +  V_0 * t + (0.5 * a * t * t);
+            if (i == action.size() - 1) {
+                // printf("P_0: %f, V_0: %f, t: %f, a: %f P_1: %f\n", P_0, V_0, t, a, P_1);
+                action[i][j] = P_1;
+            }
+        }
+
+        // velocities
+        for (size_t j = mp.action[i].size(); j < mp.action[i].size() * 2; ++j) {
+            double V_0 = state[j];
+            // double t = state[mp.action[i].size() * 2];
+            double a = mp.action[i][j - mp.action[i].size()];
+            double V_1 = V_0 + a * t;
+            if (i == action.size() - 1) {
+                // printf("V_0: %f, a: %f, t: %f, V_1: %f\n", V_0, a, t, V_1);
+                action[i][j] = V_1;
+            }
+        }
+        action[i][mp.action[i].size() * 2] = state[mp.action[i].size() * 2] + t;  // time inc
+
+
+    }
+    return true;
+}
+#endif
 bool ConveyorManipLatticeActionSpace::computeIkAction(
     const RobotState& state,
     const Affine3& goal,

@@ -36,6 +36,7 @@ bool ConveyorKDLRobotModel::init(
     }
 
     m_cart_to_jnt_vel_solver = smpl::make_unique<KDL::ChainIkSolverVel_pinv>(m_chain);
+    m_jnt_to_cart_vel_solver = smpl::make_unique<KDL::ChainFkSolverVel_recursive>(m_chain);
 
     return true;
 }
@@ -72,10 +73,43 @@ bool ConveyorKDLRobotModel::computeInverseVelocity(
     return true;
 }
 
+bool ConveyorKDLRobotModel::computeForwardVelocity(
+        const smpl::RobotState& jnt_positions,
+        const smpl::RobotState& jnt_velocities,
+        std::vector<double>& cart_velocities)
+{
+    KDL::JntArray  q_(jnt_positions.size());
+    KDL::JntArray  qdot_(jnt_positions.size());
+    // KDL::Twist     xdot_;
+    // jnt_velocities.resize(jnt_positions.size());
+
+    for (size_t i = 0; i < jnt_positions.size(); ++i) {
+        q_(i) = jnt_positions[i];
+        qdot_(i) = jnt_velocities[i];
+    }
+
+    KDL::JntArrayVel qqdot_(q_, qdot_);
+    KDL::FrameVel cart_;
+    if (!m_jnt_to_cart_vel_solver->JntToCart(qqdot_, cart_) < 0) {
+        ROS_WARN("Failed to find inverse joint velocities");
+        return false;
+    }
+    auto xdot_ = cart_.GetTwist();
+    cart_velocities.resize(6);
+    cart_velocities[0] = xdot_.vel(0);
+    cart_velocities[1] = xdot_.vel(1);
+    cart_velocities[2] = xdot_.vel(2);
+    cart_velocities[3] = xdot_.rot(0);
+    cart_velocities[4] = xdot_.rot(1);
+    cart_velocities[5] = xdot_.rot(2);
+    return true;
+}
+
 auto ConveyorKDLRobotModel::getExtension(size_t class_code) -> smpl::Extension*
 {
     if (class_code == smpl::GetClassCode<smpl::InverseKinematicsInterface>()
         || class_code == smpl::GetClassCode<InverseVelocityInterface>()
+        || class_code == smpl::GetClassCode<ForwardVelocityInterface>()
         || class_code == smpl::GetClassCode<smpl::ForwardKinematicsInterface>()) return this;
 
     return URDFRobotModel::getExtension(class_code);

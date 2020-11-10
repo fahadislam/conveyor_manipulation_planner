@@ -123,7 +123,7 @@ bool MakeConveyorManipLatticeEGraph(
     // Parameters //
     ////////////////
 
-    std::vector<double> resolutions(robot->jointVariableCount() + 1);
+    std::vector<double> resolutions(robot->jointVariableCount() * 2 + 1);
 
     std::string disc_string;
     if (!params->getParam("discretization", disc_string)) {
@@ -143,13 +143,19 @@ bool MakeConveyorManipLatticeEGraph(
         resolutions[vidx] = dit->second;
     }
 
+    // velocity
+    auto dit_v = disc.find("velocity");
+    for (size_t vidx = robot->jointVariableCount(); vidx < robot->jointVariableCount() * 2; ++vidx) {
+        resolutions[vidx] = dit_v->second;
+    }
+
     // time dimension
     auto dit = disc.find("time");
     if (dit == end(disc)) {
         ROS_ERROR_NAMED(CP_LOGGER, "Discretization for variable 'time' not found in planning parameters");
         return false;
     }
-    resolutions[robot->jointVariableCount()] = dit->second;
+    resolutions[robot->jointVariableCount() * 2] = dit->second;
 
     ConveyorManipLatticeActionSpaceParams action_params;
     if (!GetConveyorManipLatticeActionSpaceParams(action_params, *params)) {
@@ -1143,7 +1149,15 @@ bool PlanRobotPath(
 	    	ROS_ERROR("Start state is missing planning joints");
 	    	return false;
 	    }
+
+        // velocity
+        // TODO: use from current state
+        for (int i = 0; i < 7; ++i)
+            start.push_back(0.0);
+
 	    start.push_back(start_state.joint_state.position.back());	// time
+
+
 
 	    if (!planner->manip_graph.setStart(start)) {
 	        ROS_ERROR("Failed to set start state");
@@ -2198,7 +2212,7 @@ bool QueryNormalPlanner(
 	}
 
     PlanPathParams params;
-    params.allowed_time = 10.0;
+    params.allowed_time = 1000.0;
     params.rc_constrained = false;
     params.shortcut_prerc = true;
     params.only_check_success = false;

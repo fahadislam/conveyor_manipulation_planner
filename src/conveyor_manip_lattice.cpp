@@ -89,7 +89,7 @@ bool ConveyorManipLattice::init(
         return false;
     }
 
-    if (resolutions.size() != _robot->jointVariableCount() + 1) {
+    if (resolutions.size() != _robot->jointVariableCount() * 2 + 1) {
         SMPL_ERROR_NAMED(G_LOG, "Insufficient variable resolutions for robot model");
         return false;
     }
@@ -101,10 +101,10 @@ bool ConveyorManipLattice::init(
 
     m_fk_iface = _robot->getExtension<ForwardKinematicsInterface>();
 
-    m_min_limits.resize(_robot->jointVariableCount() + 1);
-    m_max_limits.resize(_robot->jointVariableCount() + 1);
-    m_continuous.resize(_robot->jointVariableCount() + 1);
-    m_bounded.resize(_robot->jointVariableCount() + 1);
+    m_min_limits.resize(_robot->jointVariableCount() * 2 + 1);
+    m_max_limits.resize(_robot->jointVariableCount() * 2 + 1);
+    m_continuous.resize(_robot->jointVariableCount() * 2 + 1);
+    m_bounded.resize(_robot->jointVariableCount() * 2 + 1);
     for (int jidx = 0; jidx < _robot->jointVariableCount(); ++jidx) {
         m_min_limits[jidx] = _robot->minPosLimit(jidx);
         m_max_limits[jidx] = _robot->maxPosLimit(jidx);
@@ -118,18 +118,33 @@ bool ConveyorManipLattice::init(
             m_continuous[jidx] ? "true" : "false",
             m_bounded[jidx] ? "true" : "false");
     }
+
+    // velocity
+    m_min_limits[_robot->jointVariableCount() + 0] = -2.10; m_max_limits[_robot->jointVariableCount() + 0] = 2.10;
+    m_min_limits[_robot->jointVariableCount() + 1] = -2.10; m_max_limits[_robot->jointVariableCount() + 1] = 2.10;
+    m_min_limits[_robot->jointVariableCount() + 2] = -3.27; m_max_limits[_robot->jointVariableCount() + 2] = 3.27;
+    m_min_limits[_robot->jointVariableCount() + 3] = -3.30; m_max_limits[_robot->jointVariableCount() + 3] = 3.30;
+    m_min_limits[_robot->jointVariableCount() + 4] = -3.60; m_max_limits[_robot->jointVariableCount() + 4] = 3.60;
+    m_min_limits[_robot->jointVariableCount() + 5] = -3.10; m_max_limits[_robot->jointVariableCount() + 5] = 3.10;
+    m_min_limits[_robot->jointVariableCount() + 6] = -3.60; m_max_limits[_robot->jointVariableCount() + 6] = 3.60;
+
+    for (int jidx = _robot->jointVariableCount(); jidx < _robot->jointVariableCount() * 2; ++jidx) {
+        m_continuous[jidx] = false;
+        m_bounded[jidx] = true;
+    }
+
     // time dimension
-    m_min_limits[_robot->jointVariableCount()] = 0.0;
-    m_max_limits[_robot->jointVariableCount()] = 50.0;
-    m_continuous[_robot->jointVariableCount()] = false;
+    m_min_limits[_robot->jointVariableCount() * 2] = 0.0;
+    m_max_limits[_robot->jointVariableCount() * 2] = 50.0;
+    m_continuous[_robot->jointVariableCount() * 2] = false;
     m_bounded[_robot->jointVariableCount()] = true;
 
     m_goal_state_id = reserveHashEntry();
     SMPL_DEBUG_NAMED(G_LOG, "  goal state has state ID %d", m_goal_state_id);
 
-    std::vector<int> discretization(_robot->jointVariableCount() + 1);
-    std::vector<double> deltas(_robot->jointVariableCount() + 1);
-    for (size_t vidx = 0; vidx < _robot->jointVariableCount() + 1; ++vidx) {
+    std::vector<int> discretization(_robot->jointVariableCount() * 2 + 1);
+    std::vector<double> deltas(_robot->jointVariableCount() * 2 + 1);
+    for (size_t vidx = 0; vidx < _robot->jointVariableCount() * 2 + 1; ++vidx) {
         if (m_continuous[vidx]) {
             discretization[vidx] = (int)std::round((2.0 * M_PI) / resolutions[vidx]);
             deltas[vidx] = (2.0 * M_PI) / (double)discretization[vidx];
@@ -226,11 +241,11 @@ void ConveyorManipLattice::GetSuccs(
     ConveyorManipLatticeState* parent_entry = m_states[state_id];
 
     assert(parent_entry);
-    assert(parent_entry->coord.size() >= robot()->jointVariableCount() + 1);
+    assert(parent_entry->coord.size() >= robot()->jointVariableCount() * 2 + 1);
 
     // log expanded state details
     SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  coord: " << parent_entry->coord);
-    SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
+    SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
 
     auto* vis_name = "expansion";
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
@@ -246,7 +261,7 @@ void ConveyorManipLattice::GetSuccs(
     SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "  actions: %zu", actions.size());
 
     // check actions for validity
-    RobotCoord succ_coord(robot()->jointVariableCount() + 1, 0);
+    RobotCoord succ_coord(robot()->jointVariableCount() * 2 + 1, 0);
     for (size_t i = 0; i < actions.size(); ++i) {
         auto& action = actions[i];
 
@@ -297,7 +312,7 @@ void ConveyorManipLattice::GetSuccs(
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "      succ: %zu", i);
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        id: %5i", succ_state_id);
         SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "        coord: " << succ_coord);
-        SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "        state: " << succ_entry->state);
+        SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "        state: " << succ_entry->state);
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        cost: %5d", cost(parent_entry, succ_entry, is_goal_succ));
     }
 
@@ -311,7 +326,7 @@ void ConveyorManipLattice::GetSuccs(
     // std::tie(object_pose, object_velocity) = extractConveyorObjectState(parent_entry->state.back());
     // vis_name = "obj";
     // SV_SHOW_INFO_NAMED(vis_name, visual::MakePoseMarkers(object_pose, m_viz_frame_id, vis_name));
-    // getchar();
+    getchar();
 }
 
 // Stopwatch GetLazySuccsStopwatch("GetLazySuccs", 10);
@@ -408,8 +423,8 @@ int ConveyorManipLattice::GetTrueCost(int parentID, int childID)
 
     ConveyorManipLatticeState* parent_entry = m_states[parentID];
     ConveyorManipLatticeState* child_entry = m_states[childID];
-    assert(parent_entry && parent_entry->coord.size() >= robot()->jointVariableCount() + 1);
-    assert(child_entry && child_entry->coord.size() >= robot()->jointVariableCount() + 1);
+    assert(parent_entry && parent_entry->coord.size() >= robot()->jointVariableCount() * 2 + 1);
+    assert(child_entry && child_entry->coord.size() >= robot()->jointVariableCount() * 2 + 1);
 
     auto& parent_angles = parent_entry->state;
     auto* vis_name = "expansion";
@@ -426,7 +441,7 @@ int ConveyorManipLattice::GetTrueCost(int parentID, int childID)
     size_t num_actions = 0;
 
     // check actions for validity and find the valid action with the least cost
-    RobotCoord succ_coord(robot()->jointVariableCount() + 1);
+    RobotCoord succ_coord(robot()->jointVariableCount() * 2 + 1);
     int best_cost = std::numeric_limits<int>::max();
     for (size_t aidx = 0; aidx < actions.size(); ++aidx) {
         auto& action = actions[aidx];
@@ -581,8 +596,8 @@ void ConveyorManipLattice::coordToState(
     const RobotCoord& coord,
     RobotState& state) const
 {
-    assert((int)state.size() == robot()->jointVariableCount() + 1 &&
-            (int)coord.size() == robot()->jointVariableCount() + 1);
+    assert((int)state.size() == robot()->jointVariableCount() * 2 + 1 &&
+            (int)coord.size() == robot()->jointVariableCount() * 2 + 1);
 
     for (size_t i = 0; i < coord.size(); ++i) {
         if (m_continuous[i]) {
@@ -599,8 +614,8 @@ void ConveyorManipLattice::stateToCoord(
     const RobotState& state,
     RobotCoord& coord) const
 {
-    assert((int)state.size() == robot()->jointVariableCount() + 1 &&
-            (int)coord.size() == robot()->jointVariableCount() + 1);
+    assert((int)state.size() == robot()->jointVariableCount() * 2 + 1 &&
+            (int)coord.size() == robot()->jointVariableCount() * 2 + 1);
 
     for (size_t i = 0; i < state.size() + 1; ++i) {
         if (m_continuous[i]) {
@@ -693,7 +708,7 @@ int ConveyorManipLattice::reserveHashEntry()
 auto ConveyorManipLattice::computePlanningFrameFK(const RobotState& state) const
     -> Affine3
 {
-    assert(state.size() == robot()->jointVariableCount() + 1);
+    assert(state.size() == robot()->jointVariableCount() * 2 + 1);
     assert(m_fk_iface);
 
     RobotState state_positions(robot()->jointVariableCount());
@@ -739,6 +754,18 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
                 violation_mask |= 0x00000001;
                 break;
             }
+
+            // velocity limits
+            // RobotState action_velocities(robot()->jointVariableCount());
+            // std::copy(action[iidx].begin() + robot()->jointVariableCount(), action[iidx].begin() + robot()->jointVariableCount() * 2, action_velocities.begin());
+            // for (int i = 0; i < robot()->jointVariableCount(); ++i) {
+            //     if (action_velocities[i] < m_min_limits[i + robot()->jointVariableCount()] ||
+            //         action_velocities[i] > m_max_limits[i + robot()->jointVariableCount()]) {
+            //         SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> violates velocity limits");
+            //         violation_mask |= 0x00000001;
+            //         break;
+            //     }
+            // }
 
             // TODO/NOTE: this can result in an unnecessary number of collision
             // checks per each action; leaving commented here as it might hint at
@@ -1026,8 +1053,8 @@ auto ConveyorManipLattice::visualizationFrameId() const -> const std::string&
 
 auto ConveyorManipLattice::getDiscreteCenter(const RobotState& state) const -> RobotState
 {
-    RobotCoord coord(robot()->jointVariableCount() + 1);
-    RobotState center(robot()->jointVariableCount() + 1);
+    RobotCoord coord(robot()->jointVariableCount() * 2 + 1);
+    RobotState center(robot()->jointVariableCount() * 2 + 1);
     stateToCoord(state, coord);
     coordToState(coord, center);
     return center;
@@ -1155,7 +1182,7 @@ bool ConveyorManipLattice::extractPath(
 
             // find the goal state corresponding to the cheapest valid action
             ConveyorManipLatticeState* best_goal_state = nullptr;
-            RobotCoord succ_coord(robot()->jointVariableCount() + 1);
+            RobotCoord succ_coord(robot()->jointVariableCount() * 2 + 1);
             int best_cost = std::numeric_limits<int>::max();
             Action action;
             for (size_t aidx = 0; aidx < actions.size(); ++aidx) {
