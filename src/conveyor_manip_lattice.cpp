@@ -312,7 +312,7 @@ void ConveyorManipLattice::GetSuccs(
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "      succ: %zu", i);
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        id: %5i", succ_state_id);
         SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "        coord: " << succ_coord);
-        SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "        state: " << succ_entry->state);
+        SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "        state: " << succ_entry->state);
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        cost: %5d", cost(parent_entry, succ_entry, is_goal_succ));
     }
 

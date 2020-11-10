@@ -268,7 +268,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         std::copy(state.begin() + 7, state.begin() + 14, velocities.begin());
         std::vector<double> cart_vels;
         m_fd_iface->computeForwardVelocity(positions, velocities, cart_vels);
-        printf("%0.3f %0.3f %0.3f\n", cart_vels[0], cart_vels[1], cart_vels[2]);
+        // printf("%0.3f %0.3f %0.3f\n", cart_vels[0], cart_vels[1], cart_vels[2]);
         Eigen::Vector3d ee_velocity(cart_vels[0], cart_vels[1], cart_vels[2]);
         // double t = GetTimeToIntercept(object_pose.translation(), object_velocity, p.translation(), ee_velocity);
         double t = GetTimeToIntercept2(object_pose.translation(), object_velocity, p.translation(), 0.3);
