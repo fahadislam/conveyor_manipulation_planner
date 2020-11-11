@@ -191,7 +191,7 @@ bool ConveyorManipLatticeActionSpace::load(const std::string& action_filename)
                 SMPL_ERROR("End of parameter file reached prematurely. Check for newline.");
                 return false;
             }
-            mprim[j] = d * lattice->resolutions()[j];
+            mprim[j] = d; // * lattice->resolutions()[j];
             SMPL_DEBUG("Got %0.3f deg -> %0.3f rad", d, mprim[j]);
         }
 
@@ -397,9 +397,11 @@ bool ConveyorManipLatticeActionSpace::apply(
         for (size_t i = 0; i < jnt_positions.size(); ++i) {
             jnt_positions[i] = parent[i];
         }
-        Eigen::VectorXd jnt_velocities(7);
-        jnt_velocities << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
-        RobotState parent_velocities(7,0);
+        // Eigen::VectorXd jnt_velocities(7);
+        // jnt_velocities << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+        RobotState parent_velocities(7);
+        std::copy(parent.begin() + 7, parent.begin() + 14, parent_velocities.begin());
+        // RobotState parent_velocities(7,0);
         Action adaptive_action;
         auto tol = planningSpace()->goal().xyz_tolerance;
         // ROS_INFO("Before computing");
@@ -412,12 +414,12 @@ bool ConveyorManipLatticeActionSpace::apply(
                 object_velocity,
                 adaptive_action)) {
             actions.push_back(std::move(adaptive_action));
-            SMPL_DEBUG("Adaptive primitive added successfully");
+            SMPL_INFO("Adaptive primitive added successfully");
             // ROS_INFO("After computing");
             // getchar();
         }
         else {
-            SMPL_DEBUG("Adaptive primitive failed");
+            SMPL_INFO("Adaptive primitive failed");
         }
 
         // wait prim
@@ -506,7 +508,7 @@ bool ConveyorManipLatticeActionSpace::getAction(
     }
 }
 
-#if 1
+#if 0
 bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     const RobotState& state,
     const MotionPrimitive& mp,
@@ -548,23 +550,26 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
         // }
 
         // time and velocities
-        // double a = 1.0;
-        // double t_prim;
-        // for (size_t j = 0; j < mp.action[i].size(); ++j) {
-        //     double vi = state[7 + j];
-        //     double vf = std::sqrt(2 * a * mp.action[i][j] - vi * vi);   // handles +ve and _ve a
-        //     double t = (vf - vi) / a;
-        //     printf("vf %f vi %f t %f s %f\n", vf, vi, t, mp.action[i][j]);
-        //     if (t > 1e-6) {
-        //         t_prim = t;
-        //         action[i][j + 7] = vf;
-        //     }
-        //     else {
-        //         action[i][j + 7] = vi;   
-        //     }
-        // }
-        action[i][14] = state[14] + 0.1;//t_prim;
-        // action[i][mp.action[i].size()] = state[mp.action[i].size()] + max_time;
+        double a = 1.0;
+        double t_prim;
+        for (size_t j = 0; j < mp.action[i].size(); ++j) {
+            double vi = state[7 + j];
+            double vf;
+            vf = std::sqrt(2 * a * std::fabs(mp.action[i][j]) + vi * vi);   // handles +ve and _ve a
+            if (mp.action[i][j] < 0.0)
+                vf *= -1.0;
+            double t = std::fabs((vf - vi) / a);
+            printf("vf %f vi %f t %f s %f\n", vf, vi, t, mp.action[i][j]);
+            // if (t > 1e-6) {
+                t_prim = t;
+            //     action[i][j + 7] = vf;
+            // }
+            // else {
+                action[i][j + 7] = vi;   
+            // }
+        }
+        action[i][14] = state[14] + t_prim;
+        // action[i][14] = state[14] + max_time;
     }
     return true;
 }
@@ -671,6 +676,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
     const Eigen::Vector3d& object_velocity,
     std::vector<RobotState>& action)
 {
+    return false;
     // calls++;
     // printf("calls %d\n", calls);
     // Constants
@@ -735,7 +741,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
         double dy = fabs(xo_.translation().y() - x_.translation().y());
         double dz = fabs(xo_.translation().z() - x_.translation().z());
 
-        if (theta < planningSpace()->goal().rpy_tolerance[0] 
+        if (theta < planningSpace()->goal().rpy_tolerance[0]
                 // std::fabs(rot(0)) <= planningSpace()->goal().rpy_tolerance[0]
                 // && std::fabs(rot(1)) <= planningSpace()->goal().rpy_tolerance[1]
                 // && std::fabs(rot(2)) <= planningSpace()->goal().rpy_tolerance[2]
@@ -761,7 +767,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
                 // getchar();
 
             }
-            if (time_state - intercept_time >= gripping_time) {
+            if (time_state - intercept_time >= gripping_time || true) {
                 // return true;
                 // Add lift motion
                 // x_.translation().y() += lift_offset_y;
@@ -770,7 +776,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
                     SMPL_DEBUG("Failed to lift up");
                     // failures_lift++;
                     // printf("failures_lift %d\n", failures_lift);
-                    return false;
+                    // return false;
                 }
                 wp = q_;
                 double time_state = action.back().back() + lift_time;
@@ -791,13 +797,20 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
         }
 
         // TODO: check velocity limit
+        for(size_t i = 0; i < q_dot.size(); ++i) {
+            if (fabs(q_dot[i]) > planningSpace()->robot()->velLimit(i)) {
+                SMPL_INFO("Violates velocity limits joint %zu: %.3f %.3f",
+                    i, q_dot[i], planningSpace()->robot()->velLimit(i));
+                return false;
+            }
+        }
 
         // Check joint limits
         if (!planningSpace()->robot()->checkJointLimits(q_)) {
             // SMPL_INFO("Violates joint limits");
             // failures_limits++;
             // printf("failures_limits %d\n", failures_limits);
-            return false;
+            // return false;
         }
 
         // Move object

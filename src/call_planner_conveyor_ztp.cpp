@@ -1280,7 +1280,7 @@ int main(int argc, char* argv[])
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.45, 1.25, 0.0}; //{0.50, 1.37, 1.134464}; // invalid path example
+    std::vector<double> object_state = {0.45, 0.5, 0.0}; //{0.50, 1.37, 1.134464}; // invalid path example
 
     moveit_msgs::RobotTrajectory traj;
 

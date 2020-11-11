@@ -131,7 +131,7 @@ Extension* ConveyorManipHeuristic::getExtension(size_t class_code)
 }
 
 static
-double GetTimeToIntercept2(
+double GetTimeToIntercept1(
     Eigen::Vector3d target_pos,
     Eigen::Vector3d target_vel,
     Eigen::Vector3d interceptor_pos,
@@ -163,7 +163,23 @@ double GetTimeToIntercept2(
 }
 
 static
-double GetTimeToIntercept(
+double GetTimeToIntercept2(
+    Eigen::Vector3d vo,
+    Eigen::Vector3d ve)
+{
+    printf("vo: %.2f %.2f %.2f\n", vo[0], vo[1], vo[2]);
+    printf("ve: %.2f %.2f %.2f\n", ve[0], ve[1], ve[2]);
+    const double ae_max = 0.2;
+    auto diff = vo - ve;
+    double t = std::fabs(diff.norm()/ae_max);
+    // double vo_norm = vo.norm();
+    // double ve_norm = ve.norm();
+    // double t = std::fabs((vo_norm - ve_norm)/ae_max);
+    return t;
+}
+
+static
+double GetTimeToIntercept3(
     Eigen::Vector3d po,
     Eigen::Vector3d vo,
     Eigen::Vector3d pe,
@@ -172,22 +188,17 @@ double GetTimeToIntercept(
     const double ae_max = 0.5;
     auto line = po - pe;
 
+    auto line_norm = line.norm();
     // project vo
-    auto vo_norm = vo.norm();
-    printf("vo_norm %f\n", vo_norm);
-    double vo_p_norm;
-    if (vo_norm < 1e-6)
-        vo_p_norm = 0.0;
-    else {
-        auto vo_p = (vo.dot(line) / vo_norm * vo_norm) * line;
-        vo_p_norm = vo_p.norm();
-    }
+
+    auto vo_p = (vo.dot(line) / (line_norm * line_norm)) * line;
+    // printf("%f %f %f\n", vo_p[0], vo_p[1], vo_p[2]);
+    double vo_p_norm = vo_p.norm();
     printf("speed o: %.2f\n", vo_p_norm);
 
     // project ve
-    auto ve_norm = ve.norm();
-    printf("ve_norm %f\n", ve_norm);
-    auto ve_p = (ve.dot(line) / ve_norm * ve_norm) * line;
+    auto ve_p = (ve.dot(line) / (line_norm * line_norm)) * line;
+    // printf("%f %f %f\n", ve_p[0], ve_p[1], ve_p[2]);
     double ve_p_norm = ve_p.norm();
     printf("speed e: %.2f\n", ve_p_norm);
 
@@ -198,10 +209,10 @@ double GetTimeToIntercept(
     // compute ve_max
     double ve_max = std::sqrt((2 * ae_max * d + ve_p_norm*ve_p_norm + vo_p_norm*vo_p_norm ) / 2) - 1e-6;
     printf("ve_max: %.2f\n", ve_max);
-    // if (ve_p_norm > ve_max) {
-    if (d < 0.6) {
+    if (ve_p_norm > ve_max) {
+    // if (d < 0.6) {
         double t_reach = (vo_p_norm - ve_p_norm) / -ae_max;
-        printf("t_reach (ramp down): %f\n", t_reach);
+        printf("t_reach (ramp down): %f\n", t_reach); getchar();
         return t_reach;
     }
 
@@ -217,7 +228,7 @@ double GetTimeToIntercept(
     if (d_const > 0.0) {
         double t_const = d_const / ve_max;
         double t_reach = t_const + t_rampup + t_rampdown;
-        printf("t_reach: %f\n", t_reach);
+        printf("t_reach: %f\n\n", t_reach);
         return t_reach;
         // print("t_reach hitting ve_max", t_reach)
     }
@@ -270,17 +281,25 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         m_fd_iface->computeForwardVelocity(positions, velocities, cart_vels);
         // printf("%0.3f %0.3f %0.3f\n", cart_vels[0], cart_vels[1], cart_vels[2]);
         Eigen::Vector3d ee_velocity(cart_vels[0], cart_vels[1], cart_vels[2]);
-        // double t = GetTimeToIntercept(object_pose.translation(), object_velocity, p.translation(), ee_velocity);
-        double t = GetTimeToIntercept2(object_pose.translation(), object_velocity, p.translation(), 0.3);
+        double t1 = GetTimeToIntercept1(object_pose.translation(), object_velocity, p.translation(), 0.3);
+        double t2 = GetTimeToIntercept2(object_velocity, ee_velocity);
+        auto line = object_pose.translation() - p.translation();
+        double distance = line.norm();
+        // double t = GetTimeToIntercept3(object_pose.translation(), object_velocity, p.translation(), ee_velocity);
+
 
         // double w = 2.5;
         double w = 5.0;
-        printf("state: %d, angular distance %.2f time %.2f\n", state_id, computeAngularDistance(p, object_pose), w * t);
+        // printf("state: %d, angular distance %.2f time %.2f\n", state_id, computeAngularDistance(p, object_pose), w * t);
         // getchar();
+        double dist = std::max(t1, t2);
+        double rot_dist = computeAngularDistance(p, object_pose);
+        dist = std::max(dist, rot_dist);
+        printf("t1: %0.3f t2: %0.3f d: %0.3f ad: %0.3f\n", t1, t2, distance, rot_dist);
         // const double dist = t;
         // const double dist = computeAngularDistance(p, object_pose);
         // const double dist = computeAngularDistance(p, object_pose) + w * t;
-        const double dist = std::max(computeAngularDistance(p, object_pose), w * t);
+        // const double dist = std::max(computeAngularDistance(p, object_pose), w * t);
 
         const int h = FIXED_POINT_RATIO * dist;
 

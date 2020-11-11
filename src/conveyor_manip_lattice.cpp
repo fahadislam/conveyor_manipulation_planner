@@ -726,7 +726,8 @@ int ConveyorManipLattice::cost(
         return 0;
     double time = HashEntry2->state.back() - HashEntry1->state.back();
     auto DefaultCostMultiplier = 1000;
-    return time * DefaultCostMultiplier;
+    return 0.1 * DefaultCostMultiplier;
+    // return time * DefaultCostMultiplier;
     // return DefaultCostMultiplier;
 }
 
@@ -750,22 +751,22 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
 
             // check joint limits
             if (!robot()->checkJointLimits(istate)) {
-                SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> violates joint limits");
+                SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> violates joint limits");
                 violation_mask |= 0x00000001;
                 break;
             }
 
             // velocity limits
-            // RobotState action_velocities(robot()->jointVariableCount());
-            // std::copy(action[iidx].begin() + robot()->jointVariableCount(), action[iidx].begin() + robot()->jointVariableCount() * 2, action_velocities.begin());
-            // for (int i = 0; i < robot()->jointVariableCount(); ++i) {
-            //     if (action_velocities[i] < m_min_limits[i + robot()->jointVariableCount()] ||
-            //         action_velocities[i] > m_max_limits[i + robot()->jointVariableCount()]) {
-            //         SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> violates velocity limits");
-            //         violation_mask |= 0x00000001;
-            //         break;
-            //     }
-            // }
+            RobotState action_velocities(robot()->jointVariableCount());
+            std::copy(action[iidx].begin() + robot()->jointVariableCount(), action[iidx].begin() + robot()->jointVariableCount() * 2, action_velocities.begin());
+            for (int i = 0; i < robot()->jointVariableCount(); ++i) {
+                if (action_velocities[i] < m_min_limits[i + robot()->jointVariableCount()] ||
+                    action_velocities[i] > m_max_limits[i + robot()->jointVariableCount()]) {
+                    SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> violates velocity limits");
+                    violation_mask |= 0x00000001;
+                    break;
+                }
+            }
 
             // TODO/NOTE: this can result in an unnecessary number of collision
             // checks per each action; leaving commented here as it might hint at
