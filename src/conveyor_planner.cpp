@@ -2198,7 +2198,7 @@ bool QueryNormalPlanner(
 	}
 
     PlanPathParams params;
-    params.allowed_time = 10.0;
+    params.allowed_time = 1000.0;
     params.rc_constrained = false;
     params.shortcut_prerc = true;
     params.only_check_success = false;
