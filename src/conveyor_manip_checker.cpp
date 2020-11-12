@@ -280,9 +280,9 @@ bool ConveyorManipChecker::isStateValid(
 
     if (!intercept_dist > dist_thresh_fcl) {
         updateObjectSpheresState(state);
-        // if (!parent->isStateValid(state_positions)) {
-        //     return false;
-        // }
+        if (!parent->isStateValid(state_positions)) {
+            return false;
+        }
     }
     else {
         if (!checkStateFCL(state_positions, pose_object)) {
@@ -355,14 +355,14 @@ bool ConveyorManipChecker::isStateToStateValid(
         if (intercept_dist > dist_thresh_fcl) {
             updateObjectSpheresState(state_full);
             // Comment: updateState is called in isStateValid
-            // if (!parent->isStateValid(path[i])) {
-            //     // printf("i %zu size %zu spheres collision \n", i, path.size());
-            //     return false;
-            // }
+            if (!parent->isStateValid(path[i])) {
+                // printf("i %zu size %zu spheres collision \n", i, path.size());
+                // return false;
+            }
         }
         else {
             if (!checkStateFCL(path[i], pose_object)) {
-                // printf("i %zu size %zu fcl collision \n", i, path.size());
+                printf("i %zu size %zu fcl collision \n", i, path.size());
                 // if (vis) {
                 //     printf("Invalid %f %f\n", start.back(), finish.back());
                 //     auto invalid_state = path[i+1];

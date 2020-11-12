@@ -167,9 +167,9 @@ double GetTimeToIntercept2(
     Eigen::Vector3d vo,
     Eigen::Vector3d ve)
 {
-    printf("vo: %.2f %.2f %.2f\n", vo[0], vo[1], vo[2]);
-    printf("ve: %.2f %.2f %.2f\n", ve[0], ve[1], ve[2]);
-    const double ae_max = 0.2;
+    // printf("vo: %.2f %.2f %.2f\n", vo[0], vo[1], vo[2]);
+    // printf("ve: %.2f %.2f %.2f\n", ve[0], ve[1], ve[2]);
+    const double ae_max = 0.5;
     auto diff = vo - ve;
     double t = std::fabs(diff.norm()/ae_max);
     // double vo_norm = vo.norm();
@@ -292,10 +292,16 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         double w = 5.0;
         // printf("state: %d, angular distance %.2f time %.2f\n", state_id, computeAngularDistance(p, object_pose), w * t);
         // getchar();
-        double dist = std::max(t1, t2);
+        // double w1 = 1.0;
+        // double w2 = 2.0;
+        // double w3 = 0.5;
+        double w1 = 5.0;
+        double w2 = 0.0;
+        double w3 = 1.0;
+        double dist = std::max(w1 * t1, w2 * t2);
         double rot_dist = computeAngularDistance(p, object_pose);
-        dist = std::max(dist, rot_dist);
-        printf("t1: %0.3f t2: %0.3f d: %0.3f ad: %0.3f\n", t1, t2, distance, rot_dist);
+        dist = std::max(dist, w3 * rot_dist);
+        printf("t1: %0.3f t2: %0.3f d: %0.3f ad: %0.3f\n", w1 * t1, w2 * t2, distance, w3 * rot_dist);
         // const double dist = t;
         // const double dist = computeAngularDistance(p, object_pose);
         // const double dist = computeAngularDistance(p, object_pose) + w * t;

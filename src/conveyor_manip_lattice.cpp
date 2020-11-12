@@ -319,6 +319,7 @@ void ConveyorManipLattice::GetSuccs(
     if (goal_succ_count > 0) {
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "Got %d goal successors!", goal_succ_count);
     }
+    printf("No successors %zu\n", succs->size());
 
     // visualize object state
     // Eigen::Affine3d object_pose;
@@ -326,7 +327,7 @@ void ConveyorManipLattice::GetSuccs(
     // std::tie(object_pose, object_velocity) = extractConveyorObjectState(parent_entry->state.back());
     // vis_name = "obj";
     // SV_SHOW_INFO_NAMED(vis_name, visual::MakePoseMarkers(object_pose, m_viz_frame_id, vis_name));
-    getchar();
+    // getchar();
 }
 
 // Stopwatch GetLazySuccsStopwatch("GetLazySuccs", 10);
@@ -794,13 +795,13 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
     std::copy(action[0].begin(), action[0].begin() + robot()->jointVariableCount(), action_positions.begin());
 
     if (!collisionChecker()->isStateToStateValid(state, action[0])) {
-        SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> path to first waypoint in collision");
+        SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> path to first waypoint in collision");
         violation_mask |= 0x00000004;
     }
 
     if (violation_mask) {
         if (action.size() > 1) {
-            SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
+            SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
             // collision_failures++;
             // printf("collision_failures %d\n", collision_failures);
         }
@@ -828,7 +829,7 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
 
         if (!collisionChecker()->isStateToStateValid(prev_istate, curr_istate))
         {
-            SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> path between waypoints %zu and %zu in collision", j - 1, j);
+            SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> path between waypoints %zu and %zu in collision", j - 1, j);
             violation_mask |= 0x00000008;
             break;
         }
@@ -836,7 +837,7 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
 
     if (violation_mask) {
         if (action.size() > 1) {
-            SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
+            SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
             // collision_failures++;
             // printf("collision_failures %d\n", collision_failures);
         }

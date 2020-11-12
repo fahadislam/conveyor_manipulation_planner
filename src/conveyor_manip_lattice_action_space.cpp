@@ -423,11 +423,11 @@ bool ConveyorManipLatticeActionSpace::apply(
         }
 
         // wait prim
-        Action action_wait;
-        action_wait.resize(1);
-        action_wait[0] = parent;
-        action_wait[0].back() +=  0.1;
-        actions.push_back(std::move(action_wait));
+        // Action action_wait;
+        // action_wait.resize(1);
+        // action_wait[0] = parent;
+        // action_wait[0].back() +=  0.1;
+        // actions.push_back(std::move(action_wait));
     }
 
     for (auto& prim : m_mprims) {
@@ -676,7 +676,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
     const Eigen::Vector3d& object_velocity,
     std::vector<RobotState>& action)
 {
-    return false;
+    // return false;
     // calls++;
     // printf("calls %d\n", calls);
     // Constants
@@ -801,16 +801,16 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
             if (fabs(q_dot[i]) > planningSpace()->robot()->velLimit(i)) {
                 SMPL_INFO("Violates velocity limits joint %zu: %.3f %.3f",
                     i, q_dot[i], planningSpace()->robot()->velLimit(i));
-                return false;
+                // return false;
             }
         }
 
         // Check joint limits
         if (!planningSpace()->robot()->checkJointLimits(q_)) {
-            // SMPL_INFO("Violates joint limits");
+            SMPL_INFO("Violates joint limits");
             // failures_limits++;
             // printf("failures_limits %d\n", failures_limits);
-            // return false;
+            return false;
         }
 
         // Move object

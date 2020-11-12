@@ -81,8 +81,8 @@ bool ConveyorManipLatticeEgraph::extractPath(
             path.push_back(entry->state);
         }
 
-        auto* vis_name = "goal_config";
-        SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(path.back(), vis_name));
+        // auto* vis_name = "goal_config";
+        // SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(path.back(), vis_name));
         return true;
     }
 
@@ -127,7 +127,7 @@ bool ConveyorManipLatticeEgraph::extractPath(
 
         SMPL_DEBUG_NAMED(G_LOG, "Check for transition via normal successors");
         ConveyorManipLatticeState* best_state = nullptr;
-        RobotCoord succ_coord(robot()->jointVariableCount() + 1);
+        RobotCoord succ_coord(robot()->jointVariableCount() * 2 + 1);
         int best_cost = std::numeric_limits<int>::max();
 
         for (const Action& action : actions) {
@@ -238,8 +238,8 @@ bool ConveyorManipLatticeEgraph::extractPath(
     // }
     // we made it!
     path = std::move(opath);
-    auto* vis_name = "goal_config";
-    SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(path.back(), vis_name));
+    // auto* vis_name = "goal_config";
+    // SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(path.back(), vis_name));
     return true;
 }
 

@@ -288,7 +288,7 @@ void ConvertJointVariablePathToJointTrajectory(
     for (size_t pidx = 0; pidx < path.size(); ++pidx) {
         auto& point = path[pidx];
 
-        for (size_t vidx = 0; vidx < point.size() - 1; ++vidx) {
+        for (size_t vidx = 0; vidx < 7; ++vidx) {
             auto& var_name = variable_names[vidx];
 
             std::string joint_name, local_name;
@@ -1230,7 +1230,7 @@ bool PlanRobotPath(
     //=========================================================
 
     // ROS_INFO("BEFORE PREPROCESS");
-    PostProcessPath(planner, path, planner->interp_resolution_, intercept_time, params.shortcut_prerc);
+    // PostProcessPath(planner, path, planner->interp_resolution_, intercept_time, params.shortcut_prerc);
     // ROS_INFO("AFTER PREPROCESS");
     // printf("new path:\n");
     // for (const auto& wp : new_path) {
@@ -2222,6 +2222,10 @@ bool QueryNormalPlanner(
 		params.allowed_time);
 		return false;
 	}
+
+    if (!IsPathValid(planner->manip_checker, path)) {
+        ROS_WARN("Path is invalid after interp");
+    }
 
     ConvertJointVariablePathToJointTrajectory(
         planner->robot_model,
