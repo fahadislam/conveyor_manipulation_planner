@@ -158,8 +158,10 @@ double GetTimeToIntercept1(
     }
  
     auto t = b / target_vel.norm();
+
+    // auto collision_pos = target_pos + (target_vel * t);
+    // printf("collision_pos y: %.3f\n", collision_pos[1]);
     return t;
-    // collision_pos = target_pos + (target_vel * t)
 }
 
 static
@@ -271,6 +273,9 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         // offset.translation().y() += 0.03;
         object_pose = object_pose * offset;
         // object_pose.translation().y() -= 0.02;
+        if (object_pose.translation().y() < -0.6) {
+            return 1e5;
+        }
         
         // get cartesian velocity
         RobotState positions(7);
@@ -283,6 +288,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         Eigen::Vector3d ee_velocity(cart_vels[0], cart_vels[1], cart_vels[2]);
         double t1 = GetTimeToIntercept1(object_pose.translation(), object_velocity, p.translation(), 0.3);
         double t2 = GetTimeToIntercept2(object_velocity, ee_velocity);
+
         auto line = object_pose.translation() - p.translation();
         double distance = line.norm();
         // double t = GetTimeToIntercept3(object_pose.translation(), object_velocity, p.translation(), ee_velocity);
@@ -295,23 +301,31 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         // double w1 = 1.0;
         // double w2 = 2.0;
         // double w3 = 0.5;
-        double w1 = 5.0;
-        double w2 = 0.0;
-        double w3 = 1.0;
-        double dist = std::max(w1 * t1, w2 * t2);
+        // double w1 = 2.5;
+        // double w2 = 1.5;
+        // double w3 = 1.5;
+        double w1 = 2.5;
+        double w2 = 1.5;
+        double w3 = 1.5;
         double rot_dist = computeAngularDistance(p, object_pose);
-        dist = std::max(dist, w3 * rot_dist);
-        printf("t1: %0.3f t2: %0.3f d: %0.3f ad: %0.3f\n", w1 * t1, w2 * t2, distance, w3 * rot_dist);
+
+        // dist = std::max(dist, w3 * rot_dist);
+        // double h1 = std::max(w1 * t1, w2 * t2);
+
+        double h1 = w1 * t1;
+        double h2 = w2 * t2 + w3 * rot_dist;
+        double dist = std::max(h1, h2);
         // const double dist = t;
         // const double dist = computeAngularDistance(p, object_pose);
         // const double dist = computeAngularDistance(p, object_pose) + w * t;
         // const double dist = std::max(computeAngularDistance(p, object_pose), w * t);
 
         const int h = FIXED_POINT_RATIO * dist;
+        // printf("state: %d | t1: %0.3f t2: %0.3f ad: %0.3f h %d\n", state_id, w1 * t1, w2 * t2, w3 * rot_dist, h);
 
-        double Y, P, R;
-        angles::get_euler_zyx(p.rotation(), Y, P, R);
-        SMPL_DEBUG_NAMED(LOG, "h(%0.3f, %0.3f, %0.3f, %0.3f, %0.3f, %0.3f) = %d", p.translation()[0], p.translation()[1], p.translation()[2], Y, P, R, h);
+        // double Y, P, R;
+        // angles::get_euler_zyx(p.rotation(), Y, P, R);
+        // SMPL_DEBUG_NAMED(LOG, "h(%0.3f, %0.3f, %0.3f, %0.3f, %0.3f, %0.3f) = %d", p.translation()[0], p.translation()[1], p.translation()[2], Y, P, R, h);
         return h;
     } else if (m_point_ext) {
         Vector3 p;

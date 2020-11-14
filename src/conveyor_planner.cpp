@@ -3065,7 +3065,7 @@ bool QueryAllTestsNormalPlanner(
         std::vector<smpl::RobotState> path;
         double intercept_time;
         PlanPathParams params;
-        params.allowed_time = 10;
+        params.allowed_time = 5.0;
         params.rc_constrained = false;
         params.only_check_success = true;
         if (!PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params)) {

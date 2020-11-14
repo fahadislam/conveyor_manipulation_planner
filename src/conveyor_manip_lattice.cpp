@@ -752,7 +752,7 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
 
             // check joint limits
             if (!robot()->checkJointLimits(istate)) {
-                SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> violates joint limits");
+                SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> violates joint limits");
                 violation_mask |= 0x00000001;
                 break;
             }
@@ -763,7 +763,7 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
             for (int i = 0; i < robot()->jointVariableCount(); ++i) {
                 if (action_velocities[i] < m_min_limits[i + robot()->jointVariableCount()] ||
                     action_velocities[i] > m_max_limits[i + robot()->jointVariableCount()]) {
-                    SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> violates velocity limits");
+                    SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> violates velocity limits");
                     violation_mask |= 0x00000001;
                     break;
                 }
@@ -795,13 +795,13 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
     std::copy(action[0].begin(), action[0].begin() + robot()->jointVariableCount(), action_positions.begin());
 
     if (!collisionChecker()->isStateToStateValid(state, action[0])) {
-        SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> path to first waypoint in collision");
+        SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> path to first waypoint in collision");
         violation_mask |= 0x00000004;
     }
 
     if (violation_mask) {
         if (action.size() > 1) {
-            SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
+            SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
             // collision_failures++;
             // printf("collision_failures %d\n", collision_failures);
         }
@@ -829,7 +829,7 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
 
         if (!collisionChecker()->isStateToStateValid(prev_istate, curr_istate))
         {
-            SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        -> path between waypoints %zu and %zu in collision", j - 1, j);
+            SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        -> path between waypoints %zu and %zu in collision", j - 1, j);
             violation_mask |= 0x00000008;
             break;
         }
@@ -837,7 +837,7 @@ bool ConveyorManipLattice::checkAction(const RobotState& state, const Action& ac
 
     if (violation_mask) {
         if (action.size() > 1) {
-            SMPL_INFO_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
+            SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "        adaptive prim in collision");
             // collision_failures++;
             // printf("collision_failures %d\n", collision_failures);
         }

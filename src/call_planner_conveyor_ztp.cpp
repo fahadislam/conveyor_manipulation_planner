@@ -909,7 +909,7 @@ int main(int argc, char* argv[])
     ros::NodeHandle ph("~");
 
 
-    g_listener.reset(new tf::TransformListener);
+    // g_listener.reset(new tf::TransformListener);
 
     ros::Subscriber sub_dope = nh.subscribe("/dope/pose_sugar", 1000, DopePoseCallback);
 
@@ -1236,10 +1236,10 @@ int main(int argc, char* argv[])
 
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY;
-    PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
+    // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_CONST_TIME_QUERY;
-    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
+    PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_QUERY;
 
@@ -1280,7 +1280,9 @@ int main(int argc, char* argv[])
 
     // std::vector<double> object_state = {0.53, 1.39, -2.268929}; // for hardcoded modes
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
-    std::vector<double> object_state = {0.45, 1.25, 0.0}; //{0.50, 1.37, 1.134464}; // invalid path example
+    // std::vector<double> object_state = {0.5, 1.0, 0.0};
+    // std::vector<double> object_state = {0.5, 1.0, M_PI/2};
+    std::vector<double> object_state = {0.5, 1.0, M_PI/3};
 
     moveit_msgs::RobotTrajectory traj;
 

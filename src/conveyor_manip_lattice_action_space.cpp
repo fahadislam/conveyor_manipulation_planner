@@ -581,47 +581,33 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     Action& action)
 {
     action = mp.action;
-    for (size_t i = 0; i < action.size(); ++i) {
-        // action[i].insert(action[i].end(), mp.action[i].size() + 1, 0.0);
-        action[i].resize(state.size());
+    action[0].resize(state.size());
+
+    // positions
+    double t = 0.3;
+    for (size_t j = 0; j < 7; ++j) {
+        // action[i][j] = action[i][j] + state[j];
+        double V_0 = state[7 + j];
+        // double t = state[mp.action[i].size() * 2];
+        double P_0 = state[j];
+        double a = mp.action[0][j];
+        double P_1;
+        P_1 = P_0 +  V_0 * t + (0.5 * a * t * t);
+            // printf("P_0: %f, V_0: %f, t: %f, a: %f P_1: %f\n", P_0, V_0, t, a, P_1);
+        action[0][j] = P_1;
     }
 
-    for (size_t i = 0; i < action.size(); ++i) {
-        // if (action[i].size() != state.size()) {
-        //     return false;
-        // }
-
-        // positions
-        double t = 0.2;
-        for (size_t j = 0; j < mp.action[i].size(); ++j) {
-            // action[i][j] = action[i][j] + state[j];
-            double V_0 = state[mp.action[i].size() + j];
-            // double t = state[mp.action[i].size() * 2];
-            double P_0 = state[j];
-            double a = mp.action[i][j];
-            double P_1;
-            P_1 = P_0 +  V_0 * t + (0.5 * a * t * t);
-            if (i == action.size() - 1) {
-                // printf("P_0: %f, V_0: %f, t: %f, a: %f P_1: %f\n", P_0, V_0, t, a, P_1);
-                action[i][j] = P_1;
-            }
-        }
-
-        // velocities
-        for (size_t j = mp.action[i].size(); j < mp.action[i].size() * 2; ++j) {
-            double V_0 = state[j];
-            // double t = state[mp.action[i].size() * 2];
-            double a = mp.action[i][j - mp.action[i].size()];
-            double V_1 = V_0 + a * t;
-            if (i == action.size() - 1) {
-                // printf("V_0: %f, a: %f, t: %f, V_1: %f\n", V_0, a, t, V_1);
-                action[i][j] = V_1;
-            }
-        }
-        action[i][mp.action[i].size() * 2] = state[mp.action[i].size() * 2] + t;  // time inc
-
-
+    // velocities
+    for (size_t j = 7; j < 14; ++j) {
+        double V_0 = state[j];
+        // double t = state[mp.action[i].size() * 2];
+        double a = mp.action[0][j - 7];
+        double V_1 = V_0 + a * t;
+            // printf("V_0: %f, a: %f, t: %f, V_1: %f\n", V_0, a, t, V_1);
+        action[0][j] = V_1;
     }
+    action[0][14] = state[14] + t;  // time inc
+
     return true;
 }
 #endif
@@ -767,7 +753,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
                 // getchar();
 
             }
-            if (time_state - intercept_time >= gripping_time || true) {
+            if (time_state - intercept_time >= gripping_time) {
                 // return true;
                 // Add lift motion
                 // x_.translation().y() += lift_offset_y;
@@ -801,22 +787,22 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
             if (fabs(q_dot[i]) > planningSpace()->robot()->velLimit(i)) {
                 SMPL_INFO("Violates velocity limits joint %zu: %.3f %.3f",
                     i, q_dot[i], planningSpace()->robot()->velLimit(i));
-                // return false;
+                return false;
             }
         }
 
         // Check joint limits
         if (!planningSpace()->robot()->checkJointLimits(q_)) {
-            SMPL_INFO("Violates joint limits");
             // failures_limits++;
             // printf("failures_limits %d\n", failures_limits);
-            return false;
+            // SMPL_INFO("Violates joint limits");
+            // return false;
         }
 
         // Move object
         xo_.translation().x() += object_velocity[0] * dt;
         xo_.translation().y() += object_velocity[1] * dt;
-        xo_.translation().z() += object_velocity[2] * dt;    
+        xo_.translation().z() += object_velocity[2] * dt;
 
     }
 
