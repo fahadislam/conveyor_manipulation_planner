@@ -311,7 +311,7 @@ void ConveyorManipLattice::GetSuccs(
     // std::tie(object_pose, object_velocity) = extractConveyorObjectState(parent_entry->state.back());
     // vis_name = "obj";
     // SV_SHOW_INFO_NAMED(vis_name, visual::MakePoseMarkers(object_pose, m_viz_frame_id, vis_name));
-    getchar();
+    // getchar();
 }
 
 // Stopwatch GetLazySuccsStopwatch("GetLazySuccs", 10);
