@@ -242,7 +242,7 @@ bool ConveyorManipLatticeEgraph::extractPath(
     // SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(path.back(), vis_name));
     return true;
 }
-
+#if 0
 bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::string>& paths)
 {
     SMPL_DEBUG("Load Experience Graph at %s", paths[0].c_str());
@@ -271,7 +271,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::stri
             SMPL_DEBUG("Create hash entries for experience graph states");
 
             auto& pp = egraph_states.front();  // previous robot state
-            RobotCoord pdp(robot()->jointVariableCount() + 1); // previous robot coord
+            RobotCoord pdp(robot()->jointVariableCount() * 2 + 1); // previous robot coord
             stateToCoord(egraph_states.front(), pdp);
 
             auto pid = m_egraph.insert_node(pp);
@@ -294,7 +294,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::stri
             std::vector<RobotState> edge_data;
             for (size_t i = 1; i < egraph_states.size(); ++i) {
                 auto& p = egraph_states[i];
-                RobotCoord dp(robot()->jointVariableCount() + 1);
+                RobotCoord dp(robot()->jointVariableCount() * 2 + 1);
                 stateToCoord(p, dp);
                 if (dp != pdp) {
                     // found a new discrete state along the path
@@ -331,7 +331,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::vector<std::stri
     SMPL_DEBUG("Experience graph contains %zu nodes and %zu edges", m_egraph.num_nodes(), m_egraph.num_edges());
     return true;
 }
-
+#endif
 bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
 {
     SMPL_DEBUG("Load Experience Graph at %s", path.c_str());
@@ -358,7 +358,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
         SMPL_DEBUG("Create hash entries for experience graph states");
 
         auto& pp = egraph_states.front();  // previous robot state
-        RobotCoord pdp(robot()->jointVariableCount() + 1); // previous robot coord
+        RobotCoord pdp(robot()->jointVariableCount() * 2 + 1); // previous robot coord
         stateToCoord(egraph_states.front(), pdp);
 
         auto pid = m_egraph.insert_node(pp);
@@ -381,7 +381,7 @@ bool ConveyorManipLatticeEgraph::loadExperienceGraph(const std::string& path)
         std::vector<RobotState> edge_data;
         for (size_t i = 1; i < egraph_states.size(); ++i) {
             auto& p = egraph_states[i];
-            RobotCoord dp(robot()->jointVariableCount() + 1);
+            RobotCoord dp(robot()->jointVariableCount() * 2 + 1);
             stateToCoord(p, dp);
             if (dp != pdp) {
                 // found a new discrete state along the path
@@ -794,14 +794,14 @@ bool ConveyorManipLatticeEgraph::parseExperienceGraphFile(
     SMPL_DEBUG("  %zu fields", parser.fieldCount());
 
     const size_t jvar_count = robot()->getPlanningJoints().size();
-    if (parser.fieldCount() != jvar_count + 1) {
+    if (parser.fieldCount() != jvar_count * 2 + 1) {
         SMPL_ERROR("Parsed experience graph contains insufficient number of joint variables");
         return false;
     }
 
     egraph_states.reserve(parser.totalFieldCount());
     for (size_t i = 0; i < parser.recordCount(); ++i) {
-        RobotState state(jvar_count + 1);
+        RobotState state(jvar_count * 2 + 1);
         for (size_t j = 0; j < parser.fieldCount(); ++j) {
             try {
                 state[j] = std::stod(parser.fieldAt(i, j));

@@ -207,7 +207,7 @@ void ConvertJointVariablePathToJointTrajectory(
     moveit_msgs::RobotTrajectory& traj)
 {
     // ROS_INFO("Convert Variable Path to Robot Trajectory");
-
+#if 0
     int num_joints = robot->jointVariableCount();
     std::vector<SingleJointTrajectory> joint_trajs(num_joints);
     for (size_t i = 0; i < num_joints; ++i) {
@@ -244,7 +244,7 @@ void ConvertJointVariablePathToJointTrajectory(
             joint_trajs[i].velocities[0] = start_state.joint_state.velocity[i + 1];
         }
     }
-
+#endif
     //--------------------------------------
     traj.joint_trajectory.header.frame_id = joint_state_frame;
     traj.multi_dof_joint_trajectory.header.frame_id = multi_dof_joint_state_frame;
@@ -344,7 +344,8 @@ void ConvertJointVariablePathToJointTrajectory(
                 auto posidx = std::distance(begin(traj.joint_trajectory.joint_names), it);
 
                 p.positions[posidx] = point[vidx];
-                p.velocities[posidx] = joint_trajs[vidx].velocities[pidx];
+                p.velocities[posidx] = point[pidx + 7];
+                // p.velocities[posidx] = joint_trajs[vidx].velocities[pidx];
                 // p.accelerations[posidx] = joint_trajs[vidx].accelerations[pidx];
                 p.time_from_start = ros::Duration(point.back());
             }
@@ -521,11 +522,14 @@ bool WritePath(
     for (size_t vidx = 0; vidx < robot->jointVariableCount(); ++vidx) {
         auto& var_name = robot->getPlanningJoints()[vidx];
         ofs << var_name; // TODO: sanitize variable name for csv?
-        if (vidx != robot->jointVariableCount() - 1) {
-            ofs << ',';
-        }
+        ofs << ',';
     }
-    ofs << ',' << "time_from_start";
+    for (size_t vidx = 0; vidx < robot->jointVariableCount(); ++vidx) {
+        auto& var_name = robot->getPlanningJoints()[vidx];
+        ofs << var_name << "_dot"; // TODO: sanitize variable name for csv?
+        ofs << ',';
+    }
+    ofs << "time_from_start";
     ofs << '\n';
 
     auto wp_count = std::max(
@@ -545,6 +549,7 @@ bool WritePath(
             for (size_t jidx = 0; jidx < joint_count; ++jidx) {
                 auto& joint_name = traj.joint_trajectory.joint_names[jidx];
                 auto vp = wp.positions[jidx];
+                auto vv = wp.velocities[jidx];
                 auto it = std::find(
                         begin(state.joint_state.name),
                         end(state.joint_state.name),
@@ -552,6 +557,7 @@ bool WritePath(
                 if (it != end(state.joint_state.name)) {
                     auto tvidx = std::distance(begin(state.joint_state.name), it);
                     state.joint_state.position[tvidx] = vp;
+                    state.joint_state.velocity[tvidx] = vv;
                 }
             }
         }
@@ -632,12 +638,28 @@ bool WritePath(
                 auto vp = state.joint_state.position[tvidx];
                 ofs << vp;
             }
-
-            if (vidx != robot->jointVariableCount() - 1) {
-                ofs << ',';
-            }
+            ofs << ',';
         }
-        ofs << ',' << traj.joint_trajectory.points[widx].time_from_start.toSec();
+
+        for (size_t vidx = 0; vidx < robot->jointVariableCount(); ++vidx) {
+            auto& var_name = robot->getPlanningJoints()[vidx];
+            auto it = std::find(
+                    begin(state.joint_state.name),
+                    end(state.joint_state.name),
+                    var_name);
+            if (it == end(state.joint_state.name)) continue;
+
+            auto tvidx = std::distance(begin(state.joint_state.name), it);
+            auto vv = state.joint_state.velocity[tvidx];
+            // ofs.precision(6);
+            if (fabs(vv) < 1e-6)
+                ofs << 0.0;
+            else
+                ofs << vv;
+            ofs << ',';
+        }
+
+        ofs << traj.joint_trajectory.points[widx].time_from_start.toSec();
         // printf("widx %zu time %f\n", widx, traj.joint_trajectory.points[widx].time_from_start.toSec());
         ofs << '\n';
     }
@@ -699,7 +721,7 @@ bool ReinitDijkstras(
     }
 
     if (!planner->hkey_dijkstra.reinit_search()) {
-        ROS_ERROR("Failed to initialize Dijsktras");
+        ROS_ERROR("Failed to initialize Dijktras");
         return 1;
     }
 }
@@ -1438,9 +1460,11 @@ bool ComputeRootPaths(
             //  - For the first iteration it should be the center state
             auto state_id = planner->hkey_dijkstra.getNextStateId();
             if (state_id == -1) {   // OPEN empty or all states covered
+                printf("done\n");
                 break;
             }
             else if (state_id == -2) {      // State already covered
+                printf("skip\n");
                 continue;
             }
             auto object_state = planner->object_graph.extractState(state_id);
@@ -1563,6 +1587,9 @@ bool ComputeRootPaths(
     {   
         ROS_ERROR("Start state is missing planning joints");
         return false;
+    }
+    for (int i = 0; i < 7; ++i) {
+        start.push_back(start_state.joint_state.velocity[i]);    
     }
     start.push_back(start_state.joint_state.position.back());
     paths.resize(center_count);

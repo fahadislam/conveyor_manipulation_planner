@@ -245,7 +245,7 @@ void ConveyorManipLattice::GetSuccs(
 
     // log expanded state details
     SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  coord: " << parent_entry->coord);
-    SMPL_INFO_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
+    SMPL_DEBUG_STREAM_NAMED(G_EXPANSIONS_LOG, "  angles: " << parent_entry->state);
 
     auto* vis_name = "expansion";
     SV_SHOW_INFO_NAMED(vis_name, getStateVisualization(parent_entry->state, vis_name));
@@ -319,7 +319,7 @@ void ConveyorManipLattice::GetSuccs(
     if (goal_succ_count > 0) {
         SMPL_DEBUG_NAMED(G_EXPANSIONS_LOG, "Got %d goal successors!", goal_succ_count);
     }
-    printf("No successors %zu\n", succs->size());
+    // printf("No successors %zu\n", succs->size());
 
     // visualize object state
     // Eigen::Affine3d object_pose;
@@ -618,7 +618,7 @@ void ConveyorManipLattice::stateToCoord(
     assert((int)state.size() == robot()->jointVariableCount() * 2 + 1 &&
             (int)coord.size() == robot()->jointVariableCount() * 2 + 1);
 
-    for (size_t i = 0; i < state.size() + 1; ++i) {
+    for (size_t i = 0; i < state.size(); ++i) {
         if (m_continuous[i]) {
             auto pos_angle = normalize_angle_positive(state[i]);
 

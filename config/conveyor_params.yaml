@@ -8,7 +8,7 @@ planning:
   size_y: 0.01
   interp_resolution: 0.05
   replan_resolution: 0.5
-  time_bound: 0.2
+  time_bound: 0.5
   buffer_time: 0.2
 
   replan_cutoff: 3.5 # keep it <=4.0 for 0.15 speed 

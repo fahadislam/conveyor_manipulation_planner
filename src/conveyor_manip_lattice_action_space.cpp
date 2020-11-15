@@ -414,12 +414,12 @@ bool ConveyorManipLatticeActionSpace::apply(
                 object_velocity,
                 adaptive_action)) {
             actions.push_back(std::move(adaptive_action));
-            SMPL_INFO("Adaptive primitive added successfully");
+            SMPL_DEBUG("Adaptive primitive added successfully");
             // ROS_INFO("After computing");
             // getchar();
         }
         else {
-            SMPL_INFO("Adaptive primitive failed");
+            SMPL_DEBUG("Adaptive primitive failed");
         }
 
         // wait prim
@@ -583,30 +583,38 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     action = mp.action;
     action[0].resize(state.size());
 
-    // positions
-    double t = 0.3;
+    double t = 0.2;
+    // double a = 2.0;
+    // double t_prim;
     for (size_t j = 0; j < 7; ++j) {
+        ///////////////
+        // positions //
+        ///////////////
         // action[i][j] = action[i][j] + state[j];
         double V_0 = state[7 + j];
         // double t = state[mp.action[i].size() * 2];
         double P_0 = state[j];
         double a = mp.action[0][j];
+        // double t = mp.action[0][j];
         double P_1;
         P_1 = P_0 +  V_0 * t + (0.5 * a * t * t);
-            // printf("P_0: %f, V_0: %f, t: %f, a: %f P_1: %f\n", P_0, V_0, t, a, P_1);
+            // printf("j: %zu | P_0: %f, V_0: %f, t: %f, a: %f P_1: %f\n", j, P_0, V_0, t, a, P_1);
         action[0][j] = P_1;
-    }
+        // if (t > 1e-6) {
+            // printf("t %f\n", t); getchar();
+            // t_prim = t;
+        // }
 
-    // velocities
-    for (size_t j = 7; j < 14; ++j) {
-        double V_0 = state[j];
-        // double t = state[mp.action[i].size() * 2];
-        double a = mp.action[0][j - 7];
+        ///////////////
+        // velocities //
+        ///////////////
         double V_1 = V_0 + a * t;
-            // printf("V_0: %f, a: %f, t: %f, V_1: %f\n", V_0, a, t, V_1);
-        action[0][j] = V_1;
+            // printf("j: %zu | V_0: %f, a: %f, t: %f, V_1: %f\n", j, V_0, a, t, V_1);
+        action[0][j + 7] = V_1;
     }
     action[0][14] = state[14] + t;  // time inc
+
+    // getchar();
 
     return true;
 }
@@ -785,8 +793,8 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
         // TODO: check velocity limit
         for(size_t i = 0; i < q_dot.size(); ++i) {
             if (fabs(q_dot[i]) > planningSpace()->robot()->velLimit(i)) {
-                SMPL_INFO("Violates velocity limits joint %zu: %.3f %.3f",
-                    i, q_dot[i], planningSpace()->robot()->velLimit(i));
+                // SMPL_INFO("Violates velocity limits joint %zu: %.3f %.3f",
+                //     i, q_dot[i], planningSpace()->robot()->velLimit(i));
                 return false;
             }
         }
@@ -796,7 +804,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
             // failures_limits++;
             // printf("failures_limits %d\n", failures_limits);
             // SMPL_INFO("Violates joint limits");
-            // return false;
+            return false;
         }
 
         // Move object

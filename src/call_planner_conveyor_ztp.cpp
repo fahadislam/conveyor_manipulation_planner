@@ -1237,9 +1237,9 @@ int main(int argc, char* argv[])
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY;
     // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_CONST_TIME_QUERY;
-    PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
+    // PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_QUERY;
 
@@ -1282,7 +1282,7 @@ int main(int argc, char* argv[])
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
     // std::vector<double> object_state = {0.5, 1.0, 0.0};
     // std::vector<double> object_state = {0.5, 1.0, M_PI/2};
-    std::vector<double> object_state = {0.5, 1.0, M_PI/3};
+    std::vector<double> object_state = {0.4, 1.0, M_PI/3};
 
     moveit_msgs::RobotTrajectory traj;
 
@@ -1303,6 +1303,7 @@ int main(int argc, char* argv[])
 
     start_state.joint_state.name.push_back("time");
     start_state.joint_state.position.push_back(0.0);
+    start_state.joint_state.velocity.resize(8, 0.0);
     auto home_state = start_state;
 
     while(ros::ok()) {

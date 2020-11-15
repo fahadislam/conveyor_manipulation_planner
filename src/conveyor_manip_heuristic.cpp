@@ -304,7 +304,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         // double w1 = 2.5;
         // double w2 = 1.5;
         // double w3 = 1.5;
-        double w1 = 2.5;
+        double w1 = 2.8;
         double w2 = 1.5;
         double w3 = 1.5;
         double rot_dist = computeAngularDistance(p, object_pose);
