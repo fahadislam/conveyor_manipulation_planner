@@ -232,6 +232,7 @@ private:
     std::vector<int> m_uc_states;
     std::vector<int> m_init_uc_states;
     std::vector<int> m_dirty_states;
+    int m_eidx;
 
     std::vector<std::vector<int>> m_subregions;
     std::vector<std::vector<std::vector<int>>> m_goal_regions;

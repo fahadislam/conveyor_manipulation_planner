@@ -624,6 +624,8 @@ int HKeyDijkstra::sampleObjectState(int subregion_id)
         m_subregions.push_back(sr);
     }
 
+    m_eidx = 0;
+
     // printf("Num subregions: %zu\n", m_subregions.size());
 
     return m_uc_states[idx];
@@ -643,29 +645,37 @@ int HKeyDijkstra::getNextStateId()
     // SMPL_INFO("     Uncovered: %zu, Total %zu, Dirty %zu, Expands: %d, Open: %zu\n ",
     //         m_uc_states.size(), m_init_uc_states.size(), m_dirty_states.size(), m_expand_count, m_open.size());
 
-    if (m_open.empty()) {
-        SMPL_DEBUG("Open list got empty");
-        return -1;
-    }
+    // if (m_open.empty()) {
+    //     SMPL_INFO("Open list got empty");
+    //     return -1;
+    // }
+    // printf("m_eidx %d\n", m_eidx);
 
-    if (m_uc_states.empty()) {
+    // if (m_uc_states.empty()) {
+    //     SMPL_DEBUG("No more uncovered states");
+    //     return -1;
+    // }
+
+    if (m_eidx > m_uc_states.size() - 1) {
         SMPL_DEBUG("No more uncovered states");
         return -1;
     }
 
-    SearchState* min_state = m_open.min();
+    // SearchState* min_state = m_open.min();
+    SearchState* min_state = getSearchState(m_uc_states[m_eidx]);
+    m_eidx++;
 
 
     SMPL_DEBUG_NAMED(SELOG, "Expand state %d", min_state->state_id);
 
-    m_open.pop();
+    // m_open.pop();
     assert(min_state->iteration_closed != m_iteration);
     assert(min_state->g != INFINITECOST);
 
     min_state->iteration_closed = m_iteration;
     min_state->eg = min_state->g;
 
-    expand(min_state);
+    // expand(min_state);
 
     ++m_expand_count;
 
@@ -673,6 +683,7 @@ int HKeyDijkstra::getNextStateId()
         printf("State %d already covered and not dirty, skipping!\n", min_state->state_id);
         return -2;
     }
+    // printf("size %zu expands %d\n", m_open.size(), m_expand_count);
 
     return min_state->state_id;
 }
@@ -686,6 +697,7 @@ void HKeyDijkstra::removeStateFromUncoveredList(int state_id)
         assert(it != m_uc_states.end());
         state->covered = true;
         m_uc_states.erase(it);
+        m_eidx--;
     }
     SMPL_INFO("     Uncovered: %zu, Total %zu, Dirty %zu, Expands: %d\n ",
             m_uc_states.size(), m_init_uc_states.size(), m_dirty_states.size(), m_expand_count);
@@ -843,6 +855,7 @@ HKeyDijkstra::SearchState* HKeyDijkstra::createState(int state_id)
 
     if (state_id != m_goal_state_id) {
         m_uc_states.push_back(state_id);
+        // printf("state %d\n", state_id);
     }
 
     return ss;
