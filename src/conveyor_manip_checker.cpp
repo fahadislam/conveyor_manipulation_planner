@@ -281,7 +281,7 @@ bool ConveyorManipChecker::isStateValid(
     if (!intercept_dist > dist_thresh_fcl) {
         updateObjectSpheresState(state);
         if (!parent->isStateValid(state_positions)) {
-            // return false;
+            return false;
         }
     }
     else {
@@ -357,7 +357,7 @@ bool ConveyorManipChecker::isStateToStateValid(
             // Comment: updateState is called in isStateValid
             if (!parent->isStateValid(path[i])) {
                 // printf("i %zu size %zu spheres collision \n", i, path.size());
-                // return false;
+                return false;
             }
         }
         else {

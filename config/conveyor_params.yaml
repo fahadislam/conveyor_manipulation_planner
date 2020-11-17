@@ -4,11 +4,11 @@ planning:
   resolution_yaw: 0.174533
   origin_x: 0.4
   origin_y: 1.0
-  size_x: 0.01
-  size_y: 0.01
+  size_x: 0.2
+  size_y: 0.1
   interp_resolution: 0.05
   replan_resolution: 0.5
-  time_bound: 0.5
+  time_bound: 0.2
   buffer_time: 0.2
 
   replan_cutoff: 3.5 # keep it <=4.0 for 0.15 speed 
