@@ -14,6 +14,18 @@ public:
         smpl::RobotState& jnt_velocities) = 0;
 };
 
+class ForwardDynamicsInterface : public virtual smpl::RobotModel
+{
+public:
+
+    /// \brief Return the number of redundant joint variables.
+    virtual bool computeAcceleration(
+        const smpl::RobotState& jnt_positions,
+        const smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_torques,
+        smpl::RobotState& jnt_accelerations) = 0;
+};
+
 class ForwardVelocityInterface : public virtual smpl::RobotModel
 {
 public:
@@ -25,7 +37,7 @@ public:
         std::vector<double>& cart_velocities) = 0;
 };
 
-class ConveyorKDLRobotModel : public smpl::KDLRobotModel, public virtual InverseVelocityInterface, ForwardVelocityInterface
+class ConveyorKDLRobotModel : public smpl::KDLRobotModel, public virtual InverseVelocityInterface, ForwardVelocityInterface, ForwardDynamicsInterface
 {
 public:
 
@@ -44,6 +56,12 @@ public:
         const std::vector<double>& cart_velocities,
         smpl::RobotState& jnt_velocities);
 
+    bool computeAcceleration(
+        const smpl::RobotState& jnt_positions,
+        const smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_torques,
+        smpl::RobotState& jnt_accelerations);
+
     bool computeForwardVelocity(
         const smpl::RobotState& jnt_positions,
         const smpl::RobotState& jnt_velocities,
@@ -56,6 +74,7 @@ private:
 
 	std::unique_ptr<KDL::ChainIkSolverVel_pinv>         m_cart_to_jnt_vel_solver;
     std::unique_ptr<KDL::ChainFkSolverVel_recursive>    m_jnt_to_cart_vel_solver;
+    std::unique_ptr<KDL::ChainFdSolver_RNE>             m_fd_solver;
 
 };
 

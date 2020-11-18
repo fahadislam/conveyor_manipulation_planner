@@ -102,6 +102,7 @@ protected:
     ForwardKinematicsInterface* m_fk_iface = nullptr;
     InverseKinematicsInterface* m_ik_iface = nullptr;
     InverseVelocityInterface* m_id_iface = nullptr;
+    ForwardDynamicsInterface* m_fd_iface = nullptr;
     ConveyorObjectStateExtension* m_ecos = nullptr;
 
     bool m_mprim_enabled[MotionPrimitive::NUMBER_OF_MPRIM_TYPES];
@@ -131,6 +132,8 @@ protected:
     const Eigen::Affine3d& object_pose,
     const Eigen::Vector3d& object_velocity,
     std::vector<RobotState>& action);
+
+    bool computeAccelerationLimits();
 
     virtual bool getAction(
         const RobotState& parent,

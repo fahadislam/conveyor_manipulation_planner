@@ -37,6 +37,8 @@ bool ConveyorKDLRobotModel::init(
 
     m_cart_to_jnt_vel_solver = smpl::make_unique<KDL::ChainIkSolverVel_pinv>(m_chain);
     m_jnt_to_cart_vel_solver = smpl::make_unique<KDL::ChainFkSolverVel_recursive>(m_chain);
+    KDL::Vector gravity(0.0, 0.0, -9.81);
+    m_fd_solver = smpl::make_unique<KDL::ChainFdSolver_RNE>(m_chain, gravity);
 
     return true;
 }
@@ -69,6 +71,31 @@ bool ConveyorKDLRobotModel::computeInverseVelocity(
 
     for (size_t i = 0; i < jnt_velocities.size(); ++i) {
         jnt_velocities[i] = qdot_(i);
+    }
+    return true;
+}
+
+bool ConveyorKDLRobotModel::computeAcceleration(
+        const smpl::RobotState& jnt_positions,
+        const smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_torques,
+        smpl::RobotState& jnt_accelerations)
+{
+    KDL::JntArray  q_(jnt_positions.size());
+    KDL::JntArray  qdot_(jnt_positions.size());
+    KDL::JntArray  torques_(jnt_positions.size());
+    KDL::JntArray  qdotdot_(jnt_positions.size());
+    KDL::Wrenches wr(11);
+    for (size_t i = 0; i < jnt_positions.size(); ++i) {
+        q_(i) = jnt_positions[i];
+        qdot_(i) = jnt_velocities[i];
+        torques_(i) = jnt_torques[i];
+    }
+
+    int ret = m_fd_solver->CartToJnt(q_, qdot_, torques_, wr, qdotdot_);
+    for (size_t i = 0; i < jnt_positions.size(); ++i) {
+        jnt_accelerations[i] = qdotdot_(i);
+        // printf("i %zu a %.2f\n", i, qdotdot_(i));
     }
     return true;
 }
@@ -110,6 +137,7 @@ auto ConveyorKDLRobotModel::getExtension(size_t class_code) -> smpl::Extension*
     if (class_code == smpl::GetClassCode<smpl::InverseKinematicsInterface>()
         || class_code == smpl::GetClassCode<InverseVelocityInterface>()
         || class_code == smpl::GetClassCode<ForwardVelocityInterface>()
+        || class_code == smpl::GetClassCode<ForwardDynamicsInterface>()
         || class_code == smpl::GetClassCode<smpl::ForwardKinematicsInterface>()) return this;
 
     return URDFRobotModel::getExtension(class_code);
