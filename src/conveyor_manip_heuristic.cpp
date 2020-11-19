@@ -173,6 +173,7 @@ double GetTimeToIntercept2(
     // printf("ve: %.2f %.2f %.2f\n", ve[0], ve[1], ve[2]);
     const double ae_max = 0.5;
     auto diff = vo - ve;
+    // auto diff = ve;
     double t = std::fabs(diff.norm()/ae_max);
     // double vo_norm = vo.norm();
     // double ve_norm = ve.norm();

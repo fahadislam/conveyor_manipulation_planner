@@ -203,9 +203,9 @@ bool ConveyorManipLatticeActionSpace::load(const std::string& action_filename)
         }
 
         if (i < (nrows - short_mprims)) {
-            addMotionPrim(mprim, false);
+            addMotionPrim(mprim, false, false);
         } else {
-            addMotionPrim(mprim, true);
+            addMotionPrim(mprim, true, false);
         }
     }
 
