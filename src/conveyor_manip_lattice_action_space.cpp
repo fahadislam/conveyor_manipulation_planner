@@ -178,6 +178,8 @@ bool ConveyorManipLatticeActionSpace::load(const std::string& action_filename)
     }
 
     std::vector<double> mprim(ncols, 0);
+    // zero acceleration prim
+    addMotionPrim(mprim, false, false);
 
     bool have_short_dist_mprims = short_mprims > 0;
     if (have_short_dist_mprims) {
@@ -203,9 +205,9 @@ bool ConveyorManipLatticeActionSpace::load(const std::string& action_filename)
         }
 
         if (i < (nrows - short_mprims)) {
-            addMotionPrim(mprim, false, false);
+            addMotionPrim(mprim, false);
         } else {
-            addMotionPrim(mprim, true, false);
+            addMotionPrim(mprim, true);
         }
     }
 
