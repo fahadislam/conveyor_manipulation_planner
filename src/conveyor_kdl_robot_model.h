@@ -19,11 +19,30 @@ class ForwardDynamicsInterface : public virtual smpl::RobotModel
 public:
 
     /// \brief Return the number of redundant joint variables.
-    virtual bool computeAcceleration(
+    virtual bool computeAccelerations(
         const smpl::RobotState& jnt_positions,
         const smpl::RobotState& jnt_velocities,
         const smpl::RobotState& jnt_torques,
         smpl::RobotState& jnt_accelerations) = 0;
+
+    virtual bool integrate(
+        double t,
+        double dt,
+        smpl::RobotState& jnt_positions,
+        smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_torques) = 0;
+};
+
+class InverseDynamicsInterface : public virtual smpl::RobotModel
+{
+public:
+
+    /// \brief Return the number of redundant joint variables.
+    virtual bool computeTorques(
+        const smpl::RobotState& jnt_positions,
+        const smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_accelerations,
+        smpl::RobotState& jnt_torques) = 0;
 };
 
 class ForwardVelocityInterface : public virtual smpl::RobotModel
@@ -37,7 +56,7 @@ public:
         std::vector<double>& cart_velocities) = 0;
 };
 
-class ConveyorKDLRobotModel : public smpl::KDLRobotModel, public virtual InverseVelocityInterface, ForwardVelocityInterface, ForwardDynamicsInterface
+class ConveyorKDLRobotModel : public smpl::KDLRobotModel, public virtual InverseVelocityInterface, ForwardVelocityInterface, ForwardDynamicsInterface, InverseDynamicsInterface
 {
 public:
 
@@ -56,11 +75,24 @@ public:
         const std::vector<double>& cart_velocities,
         smpl::RobotState& jnt_velocities);
 
-    bool computeAcceleration(
+    bool computeAccelerations(
         const smpl::RobotState& jnt_positions,
         const smpl::RobotState& jnt_velocities,
         const smpl::RobotState& jnt_torques,
         smpl::RobotState& jnt_accelerations);
+
+    bool integrate(
+        double t,
+        double dt,
+        smpl::RobotState& jnt_positions,
+        smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_torques);
+
+    bool computeTorques(
+        const smpl::RobotState& jnt_positions,
+        const smpl::RobotState& jnt_velocities,
+        const smpl::RobotState& jnt_accelerations,
+        smpl::RobotState& jnt_torques);
 
     bool computeForwardVelocity(
         const smpl::RobotState& jnt_positions,
@@ -75,6 +107,7 @@ private:
 	std::unique_ptr<KDL::ChainIkSolverVel_pinv>         m_cart_to_jnt_vel_solver;
     std::unique_ptr<KDL::ChainFkSolverVel_recursive>    m_jnt_to_cart_vel_solver;
     std::unique_ptr<KDL::ChainFdSolver_RNE>             m_fd_solver;
+    std::unique_ptr<KDL::ChainIdSolver_RNE>             m_id_solver;
 
 };
 

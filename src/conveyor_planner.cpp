@@ -344,7 +344,7 @@ void ConvertJointVariablePathToJointTrajectory(
                 auto posidx = std::distance(begin(traj.joint_trajectory.joint_names), it);
 
                 p.positions[posidx] = point[vidx];
-                p.velocities[posidx] = point[pidx + 7];
+                p.velocities[posidx] = point[vidx + 7];
                 // p.velocities[posidx] = joint_trajs[vidx].velocities[pidx];
                 // p.accelerations[posidx] = joint_trajs[vidx].accelerations[pidx];
                 p.time_from_start = ros::Duration(point.back());
@@ -1209,10 +1209,9 @@ bool PlanRobotPath(
         // ROS_INFO("BEFORE REPLAN");
 	    b_ret = planner->egraph_planner->replan(params.allowed_time, &solution_state_ids, &sol_cost);
         // ROS_INFO("AFTER REPLAN");
-	    if (params.only_check_success) {
-	        return b_ret;
-	    }
-
+	    // if (params.only_check_success) {
+	    //     return b_ret;
+	    // }
 	    if (b_ret && (solution_state_ids.size() > 0)) {
 	        ROS_DEBUG_NAMED(CP_LOGGER, "Planning succeeded");
 	        ROS_DEBUG_NAMED(CP_LOGGER, "  Num Expansions (Initial): %d", planner->egraph_planner->get_n_expands_init_solution());

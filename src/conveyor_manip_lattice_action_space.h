@@ -101,8 +101,9 @@ protected:
 
     ForwardKinematicsInterface* m_fk_iface = nullptr;
     InverseKinematicsInterface* m_ik_iface = nullptr;
-    InverseVelocityInterface* m_id_iface = nullptr;
+    InverseVelocityInterface* m_iv_iface = nullptr;
     ForwardDynamicsInterface* m_fd_iface = nullptr;
+    InverseDynamicsInterface* m_id_iface = nullptr;
     ConveyorObjectStateExtension* m_ecos = nullptr;
 
     bool m_mprim_enabled[MotionPrimitive::NUMBER_OF_MPRIM_TYPES];

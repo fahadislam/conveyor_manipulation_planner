@@ -78,8 +78,9 @@ bool ConveyorManipLatticeActionSpace::init(ConveyorManipLattice* space)
 
     m_fk_iface = robot->getExtension<ForwardKinematicsInterface>();
     m_ik_iface = robot->getExtension<InverseKinematicsInterface>();
-    m_id_iface = robot->getExtension<InverseVelocityInterface>();
+    m_iv_iface = robot->getExtension<InverseVelocityInterface>();
     m_fd_iface = robot->getExtension<ForwardDynamicsInterface>();
+    m_id_iface = robot->getExtension<InverseDynamicsInterface>();
     m_ecos = planningSpace()->getExtension<ConveyorObjectStateExtension>();
 
     if (!m_fk_iface) {
@@ -90,12 +91,16 @@ bool ConveyorManipLatticeActionSpace::init(ConveyorManipLattice* space)
         SMPL_WARN("Conveyor Manip Lattice Action Set recommends Inverse Kinematics Interface");
     }
 
-    if (!m_id_iface) {
+    if (!m_iv_iface) {
         SMPL_WARN("Conveyor Manip Lattice Action Set recommends Inverse Velocity Interface");
     }
 
     if (!m_fd_iface) {
         SMPL_WARN("Conveyor Manip Lattice Action Set recommends Forward Dynamics Interface");
+    }
+
+    if (!m_id_iface) {
+        SMPL_WARN("Conveyor Manip Lattice Action Set recommends Inverse Dynamics Interface");
     }
 
     if (!m_ecos) {
@@ -113,7 +118,7 @@ bool ConveyorManipLatticeActionSpace::init(ConveyorManipLattice* space)
     ampThresh(MotionPrimitive::SHORT_DISTANCE, 0.2);
     m_amp_thresh = 0.2;
 
-    // computeAccelerationLimits(); return false;
+    // computeAccelerationLimits(); getchar(); return false;
 
     return true;
 }
@@ -402,10 +407,10 @@ bool ConveyorManipLatticeActionSpace::apply(
 
     // adaptive dynamic motion primitive
     if (intercept_dist <= m_amp_thresh) {
-        Eigen::VectorXd jnt_positions(parent.size() - 1);
-        for (size_t i = 0; i < jnt_positions.size(); ++i) {
-            jnt_positions[i] = parent[i];
-        }
+        // Eigen::VectorXd jnt_positions(parent.size() - 1);
+        // for (size_t i = 0; i < jnt_positions.size(); ++i) {
+        //     jnt_positions[i] = parent[i];
+        // }
         // Eigen::VectorXd jnt_velocities(7);
         // jnt_velocities << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
         RobotState parent_velocities(7);
@@ -592,9 +597,32 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     action = mp.action;
     action[0].resize(state.size());
 
-    double t = 0.2;
-    // double a = 2.0;
-    // double t_prim;
+    double dt = 0.2;
+
+#if 1
+    // Check torque limits
+    RobotState positions(7);
+    std::copy(state.begin(), state.begin() + 7, positions.begin());
+    RobotState velocities(7);
+    std::copy(state.begin() + 7, state.begin() + 14, velocities.begin());
+    RobotState torques(7);
+    m_id_iface->computeTorques(positions, velocities, mp.action[0], torques);
+    for (int i = 0; i < 7; ++i) {
+        if (std::fabs(torques[i]) > planningSpace()->robot()->accLimit(i)) {
+            if (std::fabs(torques[i]) > 1e6)
+                continue;
+            // printf("jnt %d desired %.2f limit %.2f\n", i, torques[i], planningSpace()->robot()->accLimit(i));
+            return false;
+        }
+    }
+
+    // Integrate
+    m_fd_iface->integrate(state.back(), dt, positions, velocities, torques);
+    std::copy(positions.begin(), positions.end(), action[0].begin());
+    std::copy(velocities.begin(), velocities.end(), action[0].begin() + 7);
+    std::copy(state.begin() + 7, state.begin() + 14, velocities.begin());
+    action[0][14] = state[14] + dt;
+#else
     for (size_t j = 0; j < 7; ++j) {
         ///////////////
         // positions //
@@ -606,7 +634,7 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
         double a = mp.action[0][j];
         // double t = mp.action[0][j];
         double P_1;
-        P_1 = P_0 +  V_0 * t + (0.5 * a * t * t);
+        P_1 = P_0 +  V_0 * dt + (0.5 * a * dt * dt);
             // printf("j: %zu | P_0: %f, V_0: %f, t: %f, a: %f P_1: %f\n", j, P_0, V_0, t, a, P_1);
         action[0][j] = P_1;
         // if (t > 1e-6) {
@@ -617,12 +645,12 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
         ///////////////
         // velocities //
         ///////////////
-        double V_1 = V_0 + a * t;
+        double V_1 = V_0 + a * dt;
             // printf("j: %zu | V_0: %f, a: %f, t: %f, V_1: %f\n", j, V_0, a, t, V_1);
         action[0][j + 7] = V_1;
     }
-    action[0][14] = state[14] + t;  // time inc
-
+    action[0][14] = state[14] + dt;  // time inc
+#endif
     // getchar();
 
     return true;
@@ -713,16 +741,35 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
         x_dot[4] = gain_r * rot[1];
         x_dot[5] = gain_r * rot[0];
 
-        if (!m_id_iface->computeInverseVelocity(q_, x_dot, q_dot)) {
+        auto q_dot_prev = q_dot;
+        if (!m_iv_iface->computeInverseVelocity(q_, x_dot, q_dot)) {
             SMPL_INFO("Failed to compute inverse velocity");
             return false;
         }
-
+        // compute desired acceleration
+        RobotState q_dotdot(7);
+        for (int i = 0; i < 7; ++i) {
+            q_dotdot[i] = (q_dot[i] - q_dot_prev[i]) / dt;
+        }
+        // compute desired torque
+        RobotState torques(7);
+        m_id_iface->computeTorques(q_, q_dot, q_dotdot, torques);
+        for (int i = 0; i < 7; ++i) {
+            if (std::fabs(torques[i]) > planningSpace()->robot()->accLimit(i)) {
+                if (std::fabs(torques[i]) > 1e6)
+                    continue;
+                // printf("jnt %d desired %.2f limit %.2f\n", i, torques[i], planningSpace()->robot()->accLimit(i));
+                return false;
+            }
+        }
         // Add waypoint to action
-        auto wp = q_;
-        double time_state = time_start + dt * (iter);
-        wp.push_back(time_state);
-        action.push_back(std::move(wp));
+        RobotState state;
+        state.resize(15);
+        std::copy(q_.begin(), q_.end(), state.begin());
+        std::copy(q_dot.begin(), q_dot.end(), state.begin() + 7);
+        double time_state = time_start + dt * (iter + 1);
+        state[14] = time_state;
+        action.push_back(state);
 
         // Check if within tolerance
         // ROS_INFO("dx: %f dy: %f dz: %f", diff.translation().x(), diff.translation().y(), diff.translation().z());
@@ -781,11 +828,11 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
                     // printf("failures_lift %d\n", failures_lift);
                     // return false;
                 }
-                wp = q_;
+                std::copy(q_.begin(), q_.end(), state.begin());
+                std::copy(q_dot.begin(), q_dot.end(), state.begin() + 7);
                 double time_state = action.back().back() + lift_time;
-                wp.push_back(time_state);
-
-                action.push_back(std::move(wp));
+                state[14] = time_state;
+                action.push_back(state);
                 // SMPL_INFO("Added adaptive primitive");
                 // successes++;
                 // printf("successes %d\n", successes);
@@ -838,7 +885,7 @@ bool ConveyorManipLatticeActionSpace::computeAccelerationLimits()
     limits_torque[5] = 10.0;
     limits_torque[6] = 10.0;
 
-    int N = 10000;
+    int N = 1000;
     std::vector<double> qdotdot_ub(7,1e6);
     std::vector<double> qdotdot_lb(7,-1e6);
     std::mt19937 r;
@@ -846,25 +893,25 @@ bool ConveyorManipLatticeActionSpace::computeAccelerationLimits()
         0.0, 2 * M_PI);
     for (int i = 0; i < N; ++i) {
         // printf("iter %d\n", i);
-        std::vector<double> q(7);
-        std::vector<double> qdot(7);
-        for (int j = 0; j < 7; ++j) {
-            std::uniform_real_distribution<> dist_q(
-                planningSpace()->robot()->minPosLimit(j), planningSpace()->robot()->maxPosLimit(j));
-            std::uniform_real_distribution<> dist_qdot(
-                -planningSpace()->robot()->velLimit(j), planningSpace()->robot()->velLimit(j));
-            if (planningSpace()->robot()->isContinuous(j))
-                q[j] = dist_q_cont(r);
-            else
-                q[j] = dist_q(r);
-            qdot[j] = dist_qdot(r);
-        }
-        // printf("%.2f %.2f\n", q[1], qdot[1]);
+        std::vector<double> q(7, 0.0);
+        std::vector<double> qdot(7, 0.0);
+        // for (int j = 0; j < 7; ++j) {
+        //     std::uniform_real_distribution<> dist_q(
+        //         planningSpace()->robot()->minPosLimit(j), planningSpace()->robot()->maxPosLimit(j));
+        //     std::uniform_real_distribution<> dist_qdot(
+        //         -planningSpace()->robot()->velLimit(j), planningSpace()->robot()->velLimit(j));
+        //     if (planningSpace()->robot()->isContinuous(j))
+        //         q[j] = dist_q_cont(r);
+        //     else
+        //         q[j] = dist_q(r);
+        //     qdot[j] = dist_qdot(r);
+        // }
+        printf("%.2f %.2f\n", q[1], qdot[1]);
         for (int j = 0; j < 7; ++j) {
             std::vector<double> qdotdot_jnt_u(7);
             std::vector<double> tau_u(7,0.0);
             tau_u[j] = limits_torque[j];
-            m_fd_iface->computeAcceleration(q, qdot, tau_u, qdotdot_jnt_u);
+            m_fd_iface->computeAccelerations(q, qdot, tau_u, qdotdot_jnt_u);
             qdotdot_ub[j] = std::min(qdotdot_ub[j], qdotdot_jnt_u[j]);
 
             // std::vector<double> qdotdot_jnt_l(7);
@@ -872,12 +919,14 @@ bool ConveyorManipLatticeActionSpace::computeAccelerationLimits()
             // tau_l[j] = -limits_torque[j];
             // m_fd_iface->computeAcceleration(q, qdot, tau_l, qdotdot_jnt_l);
             // qdotdot_lb[j] = std::max(qdotdot_lb[j], qdotdot_jnt_l[j]);
+
+            // printf("jnt %zu limits %.2f %.2f\n", j, qdotdot_lb[j], qdotdot_ub[j]); getchar();
         }
     }
     for (size_t i = 0; i < qdotdot_lb.size(); ++i) {
         printf("jnt %zu limits %.2f %.2f\n", i, qdotdot_lb[i], qdotdot_ub[i]);
     }
-    getchar();
+    // getchar();
 
 }
 
