@@ -95,6 +95,13 @@ public:
     bool apply(const RobotState& parent, std::vector<Action>& actions) override;
     ///@}
 
+    bool checkInverseDynamics(
+    const RobotState& positions,
+    const RobotState& velocities,
+    const RobotState& accelerations,
+    RobotState& torques,
+    bool verbose = false);
+
 protected:
 
     std::vector<MotionPrimitive> m_mprims;

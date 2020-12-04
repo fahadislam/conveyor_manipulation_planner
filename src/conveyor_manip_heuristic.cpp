@@ -287,7 +287,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         m_fd_iface->computeForwardVelocity(positions, velocities, cart_vels);
         // printf("%0.3f %0.3f %0.3f\n", cart_vels[0], cart_vels[1], cart_vels[2]);
         Eigen::Vector3d ee_velocity(cart_vels[0], cart_vels[1], cart_vels[2]);
-        double t1 = GetTimeToIntercept1(object_pose.translation(), object_velocity, p.translation(), 0.3);
+        double t1 = GetTimeToIntercept1(object_pose.translation(), object_velocity, p.translation(), 0.25);
         double t2 = GetTimeToIntercept2(object_velocity, ee_velocity);
 
         auto line = object_pose.translation() - p.translation();
@@ -296,7 +296,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
 
 
         // double w = 2.5;
-        double w = 5.0;
+        // double w = 5.0;
         // printf("state: %d, angular distance %.2f time %.2f\n", state_id, computeAngularDistance(p, object_pose), w * t);
         // getchar();
         // double w1 = 1.0;
@@ -305,9 +305,14 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         // double w1 = 2.5;
         // double w2 = 1.5;
         // double w3 = 1.5;
-        double w1 = 2.8;    //5.0
+        double w1 = 5.0;    //5.0
         double w2 = 1.5;
         double w3 = 1.5;
+
+        // if (state.back() < 4.0 + 1e-6) {
+        //     w3 = 1.0;
+        //     // w2 = 1.8;
+        // }
         double rot_dist = computeAngularDistance(p, object_pose);
 
         // dist = std::max(dist, w3 * rot_dist);
@@ -322,7 +327,7 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         // const double dist = std::max(computeAngularDistance(p, object_pose), w * t);
 
         const int h = FIXED_POINT_RATIO * dist;
-        // printf("state: %d | t1: %0.3f t2: %0.3f ad: %0.3f h %d\n", state_id, w1 * t1, w2 * t2, w3 * rot_dist, h);
+        // printf("state: %d | h1: %0.3f h2: %0.3f\n", state_id, h1, h2);
 
         // double Y, P, R;
         // angles::get_euler_zyx(p.rotation(), Y, P, R);

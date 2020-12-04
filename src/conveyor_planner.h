@@ -79,6 +79,7 @@ struct PlanPathParams
 	bool rc_constrained;
 	bool shortcut_prerc;
 	bool only_check_success;
+	bool update_egraph;
 	// bool post_process;
 	std::string singleton_dir;
 };
@@ -113,6 +114,7 @@ struct ConveyorPlanner
     double replan_resolution_;
     double time_bound_;
     double replan_cutoff_;
+    std::vector<smpl::RobotState> current_root_path_;
     moveit_msgs::RobotState home_state_;
     std::vector<std::vector<smpl::RobotState>> home_paths_;
     std::vector<ObjectState> home_center_states_;

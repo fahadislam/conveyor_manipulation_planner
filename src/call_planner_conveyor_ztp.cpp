@@ -1251,6 +1251,10 @@ int main(int argc, char* argv[])
     //   Initialize Conveyor Planner    //
     //////////////////////////////////////
 
+    start_state.joint_state.name.push_back("time");
+    start_state.joint_state.position.push_back(0.0);
+    start_state.joint_state.velocity.resize(8, 0.0);
+
     ConveyorPlanner conveyor_planner;
 
     if (!Init(
@@ -1282,7 +1286,7 @@ int main(int argc, char* argv[])
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
     // std::vector<double> object_state = {0.5, 1.0, 0.0};
     // std::vector<double> object_state = {0.5, 1.0, M_PI/2};
-    std::vector<double> object_state = {0.4, 1.0, M_PI/3};
+    std::vector<double> object_state = {0.51, 1.25, 4.014257};
 
     moveit_msgs::RobotTrajectory traj;
 
@@ -1301,9 +1305,6 @@ int main(int argc, char* argv[])
         gripper.OpenGripper(true);
     }
 
-    start_state.joint_state.name.push_back("time");
-    start_state.joint_state.position.push_back(0.0);
-    start_state.joint_state.velocity.resize(8, 0.0);
     auto home_state = start_state;
 
     while(ros::ok()) {

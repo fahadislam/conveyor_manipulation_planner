@@ -53,7 +53,9 @@ public:
     ///@{
     bool loadExperienceGraph(const std::string& path) override;
 
-    bool loadExperienceGraph(const std::vector<std::string>& paths);
+    bool loadExperienceGraph(const std::vector<RobotState>& egraph_states);
+
+    // bool loadExperienceGraph(const std::vector<std::string>& paths);
 
     bool loadPath(
         const std::string& filepath,

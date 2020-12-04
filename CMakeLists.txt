@@ -43,7 +43,8 @@ add_library(
     src/conveyor_object_lattice.cpp
     src/conveyor_planner_interface.cpp
     src/conveyor_planner.cpp
-    src/hkey_dijkstra.cpp)
+    src/hkey_dijkstra.cpp
+    src/profile.cpp)
 target_link_libraries(conveyor_manipulation_planner ${catkin_LIBRARIES})
 target_link_libraries(conveyor_manipulation_planner ${orocos_kdl_LIBRARIES})
 target_link_libraries(conveyor_manipulation_planner smpl::smpl)

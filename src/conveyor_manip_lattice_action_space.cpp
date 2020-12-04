@@ -209,10 +209,15 @@ bool ConveyorManipLatticeActionSpace::load(const std::string& action_filename)
             SMPL_DEBUG("Got %0.3f deg -> %0.3f rad", d, mprim[j]);
         }
 
+        bool add_converse = true;
+        // if (i > 20) {
+        //     // printf("not\n");
+        //     add_converse = false;
+        // }
         if (i < (nrows - short_mprims)) {
-            addMotionPrim(mprim, false);
+            addMotionPrim(mprim, false, add_converse);
         } else {
-            addMotionPrim(mprim, true);
+            addMotionPrim(mprim, true, add_converse);
         }
     }
 
@@ -589,6 +594,31 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
 }
 #else
 
+// static double diff = 0.0;
+bool ConveyorManipLatticeActionSpace::checkInverseDynamics(
+    const RobotState& positions,
+    const RobotState& velocities,
+    const RobotState& accelerations,
+    RobotState& torques,
+    bool verbose)
+{
+    m_id_iface->computeTorques(positions, velocities, accelerations, torques);
+    for (int i = 0; i < 7; ++i) {
+        // if (verbose && i == 0)
+        //         printf("jnt %d desired %.2f limit %.2f\n", i, torques[i], planningSpace()->robot()->accLimit(i));
+        if (std::fabs(torques[i]) > planningSpace()->robot()->accLimit(i)) {
+            if (std::fabs(torques[i]) > 1e6)
+                continue;
+            if (verbose)
+                printf("jnt %d desired %.2f limit %.2f\n", i, torques[i], planningSpace()->robot()->accLimit(i));
+            return false;
+        }
+    }
+    // if (verbose)
+        // printf("diff %f\n", diff);  //33287.734020, 33336.307502
+    return true;
+}
+
 bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     const RobotState& state,
     const MotionPrimitive& mp,
@@ -597,7 +627,7 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     action = mp.action;
     action[0].resize(state.size());
 
-    double dt = 0.2;
+    double dt = 0.15;
 
 #if 1
     // Check torque limits
@@ -606,14 +636,8 @@ bool ConveyorManipLatticeActionSpace::applyMotionPrimitive(
     RobotState velocities(7);
     std::copy(state.begin() + 7, state.begin() + 14, velocities.begin());
     RobotState torques(7);
-    m_id_iface->computeTorques(positions, velocities, mp.action[0], torques);
-    for (int i = 0; i < 7; ++i) {
-        if (std::fabs(torques[i]) > planningSpace()->robot()->accLimit(i)) {
-            if (std::fabs(torques[i]) > 1e6)
-                continue;
-            // printf("jnt %d desired %.2f limit %.2f\n", i, torques[i], planningSpace()->robot()->accLimit(i));
-            return false;
-        }
+    if (!checkInverseDynamics(positions, velocities, action[0], torques)) {
+        return false;
     }
 
     // Integrate
@@ -711,7 +735,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
     // calls++;
     // printf("calls %d\n", calls);
     // Constants
-    double dt = 0.01;
+    double dt = 0.02;
     double gain_p = 1.0;
     double gain_r = 1.0;
     double gripping_time = 0.5;
