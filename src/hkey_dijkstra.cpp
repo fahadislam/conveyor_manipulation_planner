@@ -591,7 +591,7 @@ bool HKeyDijkstra::timedOut(
     return true;
 }
 
-
+static bool first = true;
 int HKeyDijkstra::sampleObjectState(int subregion_id)
 {
     // printf("\n\n\n");
@@ -608,7 +608,17 @@ int HKeyDijkstra::sampleObjectState(int subregion_id)
     //     return m_uc_states[0];
     // }
 
+    // reload dirty states
+    // for (auto id : m_dirty_states) {
+    //     m_uc_states.push_back(id);
+    // }
+
     int idx = (std::rand() % (m_uc_states.size()));
+
+    if (first) {
+        idx = 1;
+        first = false;
+    }
 
     auto state = getSearchState(m_uc_states[idx]);
     assert(state->covered);
@@ -623,7 +633,6 @@ int HKeyDijkstra::sampleObjectState(int subregion_id)
         std::vector<int> sr;
         m_subregions.push_back(sr);
     }
-
     m_eidx = 0;
 
     // printf("Num subregions: %zu\n", m_subregions.size());
@@ -651,10 +660,10 @@ int HKeyDijkstra::getNextStateId()
     // }
     // printf("m_eidx %d\n", m_eidx);
 
-    // if (m_uc_states.empty()) {
-    //     SMPL_DEBUG("No more uncovered states");
-    //     return -1;
-    // }
+    if (m_uc_states.empty()) {
+        SMPL_DEBUG("No more uncovered states");
+        return -1;
+    }
 
     if (m_eidx > m_uc_states.size() - 1) {
         SMPL_DEBUG("No more uncovered states");
@@ -855,7 +864,6 @@ HKeyDijkstra::SearchState* HKeyDijkstra::createState(int state_id)
 
     if (state_id != m_goal_state_id) {
         m_uc_states.push_back(state_id);
-        // printf("state %d\n", state_id);
     }
 
     return ss;
