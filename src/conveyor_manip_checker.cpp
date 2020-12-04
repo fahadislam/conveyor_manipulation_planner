@@ -362,8 +362,8 @@ bool ConveyorManipChecker::isStateToStateValid(
         }
         else {
             if (!checkStateFCL(path[i], pose_object)) {
+                // if (verbose) {
                 // printf("i %zu size %zu fcl collision \n", i, path.size());
-                // if (vis) {
                 //     printf("Invalid %f %f\n", start.back(), finish.back());
                 //     auto invalid_state = path[i+1];
                 //     invalid_state.push_back(state_time);

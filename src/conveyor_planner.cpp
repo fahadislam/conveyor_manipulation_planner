@@ -1173,6 +1173,26 @@ bool PlanRobotPath(
         // ROS_INFO("BEFORE REPLAN");
 	    b_ret = planner->egraph_planner->replan(params.allowed_time, &solution_state_ids, &sol_cost);
         // ROS_INFO("AFTER REPLAN");
+
+        //////////////////////////////////////////////
+        // Check if short cut node is part of plan  //
+        //////////////////////////////////////////////
+
+        if (b_ret & params.rc_constrained) {
+            int shortcut_node_id = planner->egraph_planner->get_shortcut_node_id();
+            bool contains = false;
+            for (const auto id : solution_state_ids) {
+                if (id == shortcut_node_id) {
+                    contains = true;
+                    break;
+                }
+            }
+            if (!contains) {
+                ROS_WARN("Shortcut node not part of plan");
+                return false;
+            }
+        }
+
 	    if (params.only_check_success) {
 	        return b_ret;
 	    }
@@ -1289,14 +1309,17 @@ bool PlanPathUsingRootPath(
     // update collision checker for the new object pose
     planner->manip_checker->setObjectInitialPose(object_pose);
 
-    // clear all memory
-    planner->manip_graph.eraseExperienceGraph();
-    planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+    if (params.update_egraph) {
+        // clear all memory
+        planner->manip_graph.eraseExperienceGraph();
+        planner->egraph_planner->force_planning_from_scratch_and_free_memory();
 
-    // load experience graph
-    if (!egraph_dir.empty()) {
-        planner->manip_graph.loadExperienceGraph(egraph_dir);
+        // load experience graph
+        if (!egraph_dir.empty()) {
+            planner->manip_graph.loadExperienceGraph(egraph_dir);
+        }
     }
+
     if (!planner->egraph_manip_heuristic.init(&planner->manip_graph, &planner->manip_heuristic)) {
         ROS_ERROR("Failed to initialize Generic Egraph heuristic");
         return false;
@@ -1364,10 +1387,11 @@ bool ComputeRootPaths(
         double intercept_time;
 
         PlanPathParams params;
-        params.allowed_time = 20;
+        params.allowed_time = 10;
         params.rc_constrained = false;
         params.shortcut_prerc = false;
         params.only_check_success = false;
+        params.update_egraph = true;
         if (center_count == 0) {
             params.shortcut_prerc = true;
         }
@@ -1406,8 +1430,15 @@ bool ComputeRootPaths(
         egraph_dir = start_dir + "/paths/" + std::to_string(center_count);
         WritePath(planner->robot_model, start_state, root_traj, egraph_dir, intercept_time);
 
+        // keep path in memory
+        planner->current_root_path_.clear();
+        for (auto wp : path) {
+            if (wp.back() < intercept_time + 1e-6)
+                planner->current_root_path_.push_back(wp);
+        }
+
         if (center_count == 0) {
-            WritePath(planner->robot_model, start_state, root_traj, rc_egraph_dir, planner->replan_cutoff_);
+            WritePath(planner->robot_model, start_state, root_traj, rc_egraph_dir, planner->replan_cutoff_ + planner->replan_resolution_);
         }
 
         //////////////////////////////////
@@ -1417,6 +1448,9 @@ bool ComputeRootPaths(
         ReinitDijkstras(planner, center_state);
         int covered_count = 0;
         int iter = 0;
+        planner->manip_graph.eraseExperienceGraph();
+        planner->egraph_planner->force_planning_from_scratch_and_free_memory();
+        planner->manip_graph.loadExperienceGraph(planner->current_root_path_);        
         while (true) {
 
             // Get next object state"
@@ -1444,6 +1478,7 @@ bool ComputeRootPaths(
             params.allowed_time = planner->time_bound_;
             params.rc_constrained = true;
             params.only_check_success = true;
+            params.update_egraph = false;
             if (iter == 0) {
                 params.rc_constrained = false;
                 params.only_check_success = false;
@@ -1613,6 +1648,18 @@ bool CheckSnap(
     double max_time = 0.0;
     double diff_time = to_state.back() - from_state.back(); 
     for (size_t j = 0; j < planner->robot_model->jointVariableCount(); ++j) {
+        if (planner->robot_model->isContinuous(j)) {
+            double diff = smpl::shortest_angle_diff(to_state[j], from_state[j]);
+            to_state[j] = from_state[j] + diff;
+            if (j == 6) {   // because the gripper is symmetric
+                if (diff > M_PI/2) {
+                    to_state[j] -= M_PI;
+                }
+                if (diff < -M_PI/2) {
+                    to_state[j] += M_PI;
+                }
+            }
+        }
         auto from_pos = from_state[j];
         auto to_pos = to_state[j];
         auto vel = planner->robot_model->velLimit(j);
@@ -1639,7 +1686,7 @@ bool CheckSnap(
         ret = false;
     }
 
-    if (!planner->manip_checker->isStateToStateValid(from_state, to_state)) {
+    if (!planner->manip_checker->isStateToStateValid(from_state, to_state, true)) {
         ROS_WARN("Snap motion is in collision");
         ret = false;
     }
@@ -1753,7 +1800,7 @@ bool PreprocessConveyorPlanner(
                 }
             }
 
-            break;
+            // break;
             // ROS_INFO("     Remaining states after latching: %zu", G_UNCOV.size());
             // for (auto id : G_UNCOV) {
             //     ROS_INFO("     %d",id);
@@ -1953,6 +2000,7 @@ bool QueryConstTimePlanner(
     params.rc_constrained = false;
     params.shortcut_prerc = false;
     params.only_check_success = false;
+    params.update_egraph = true;
 
     //  1. check if it is the first planning request
     std::vector<smpl::RobotState> path;
