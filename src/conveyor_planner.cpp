@@ -736,7 +736,8 @@ bool Init(
     double res_yaw;     // 5 degrees
     double origin_x;
     double origin_y;
-
+    double size_x;
+    double size_y;
     if (!params->getParam("resolution_xy", res_xy)) {
         ROS_ERROR_NAMED(CP_LOGGER, "Parameter 'resolution_xy' not found in planning params");
         return false;
@@ -753,7 +754,14 @@ bool Init(
         ROS_ERROR_NAMED(CP_LOGGER, "Parameter 'origin_y' not found in planning params");
         return false;
     }
-
+    if (!params->getParam("size_x", size_x)) {
+        ROS_ERROR_NAMED(CP_LOGGER, "Parameter 'size_x' not found in planning params");
+        return false;
+    }
+    if (!params->getParam("size_y", size_y)) {
+        ROS_ERROR_NAMED(CP_LOGGER, "Parameter 'size_y' not found in planning params");
+        return false;
+    }
     if (!params->getParam("interp_resolution", planner->interp_resolution_)) {
         ROS_ERROR_NAMED(CP_LOGGER, "Parameter 'interp_resolution_' not found in planning params");
         return false;
@@ -809,6 +817,9 @@ bool Init(
 
     // 5. Create all object states
 	ObjectState object_state = {origin_x, origin_y, 0.0};
+    if (size_x > 0.1) {
+        object_state = {origin_x + size_x/2, origin_y + size_y/2, 0.0};
+    }	
 	ReinitDijkstras(planner, object_state);
     ReplanParams search_params(10.0);
     std::vector<int> solution;
@@ -1627,6 +1638,7 @@ int GetStateIndexAfterTime(const std::vector<smpl::RobotState>& path, double t)
     }
 }
 
+static int collision_count = 0;
 bool CheckSnap(
     ConveyorPlanner* planner,
     const smpl::RobotState from_state,
@@ -1687,7 +1699,8 @@ bool CheckSnap(
     }
 
     if (!planner->manip_checker->isStateToStateValid(from_state, to_state, true)) {
-        ROS_WARN("Snap motion is in collision");
+        collision_count++;
+        ROS_WARN("Snap motion is in collision %d", collision_count);
         ret = false;
     }
 
@@ -2370,13 +2383,13 @@ bool QueryReplanningTestsPerceptionPlanner(
     double height,
     int num_tests)
 {
-    // Planner p = Planner::CONST_TIME;
-    Planner p = Planner::NORMAL;
+    Planner p = Planner::CONST_TIME;
+    // Planner p = Planner::NORMAL;
     // Planner p = Planner::EGRAPH;
 
     int failed_count = 0;
-    // std::ofstream ofs("/home/fislam/rss_stats/const.csv");
-    std::ofstream ofs("/home/fislam/rss_stats/normal.csv");
+    std::ofstream ofs("/home/fislam/rss_stats/const.csv");
+    // std::ofstream ofs("/home/fislam/rss_stats/normal.csv");
     // std::ofstream ofs("/home/fislam/rss_stats/egraph.csv");
 
     // params
@@ -2427,8 +2440,8 @@ bool QueryReplanningTestsPerceptionPlanner(
 
         //***********Replanning for the same run****************//
         int qid = 0;
-        double xx_min = x_plan - 0.05;
-        double xx_max = x_plan + 0.04;
+        double xx_min = std::max(x_plan - 0.05, x_min);
+        double xx_max = std::min(x_plan + 0.04, x_max);
         double yy_min = y_plan - 0.05;
         double yy_max = y_plan + 0.04;
         uniform_real_distribution<double> distrxx(xx_min, xx_max);
@@ -2559,7 +2572,7 @@ bool QueryReplanningTestsPerceptionPlanner(
 
         planner->current_path_.clear();
     }   // tests end
-    ROS_INFO("Failed count %f", failed_count);
+    ROS_INFO("Failed count %d", failed_count);
 
     return true;
 }

@@ -192,10 +192,10 @@ int ConveyorManipHeuristic::GetGoalHeuristic(int state_id)
         // offset.translation().y() += 0.03;
         object_pose = object_pose * offset;
         // object_pose.translation().y() -= 0.02;
-        double t = GetTimeToIntercept(object_pose.translation(), object_velocity, p.translation(), 0.3);
+        double t = GetTimeToIntercept(object_pose.translation(), object_velocity, p.translation(), 0.25);
 
         // double w = 2.5;
-        double w = 5.0;
+        double w = 3.0;
         // printf("state: %d, angular distance %.2f time %.2f\n", state_id, computeAngularDistance(p, object_pose), w * t);
         // getchar();
         // const double dist = computeAngularDistance(p, object_pose) + w * t;
