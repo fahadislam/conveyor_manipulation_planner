@@ -1185,6 +1185,7 @@ bool PlanRobotPath(
 	    b_ret = planner->egraph_planner->replan(params.allowed_time, &solution_state_ids, &sol_cost);
         // ROS_INFO("AFTER REPLAN");
 
+	    // ROS_INFO_NAMED(CP_LOGGER, "  Num Expansions (Final): %d", planner->egraph_planner->get_n_expands());
         //////////////////////////////////////////////
         // Check if short cut node is part of plan  //
         //////////////////////////////////////////////
@@ -1224,6 +1225,10 @@ bool PlanRobotPath(
 	            ROS_ERROR("Failed to convert state id path to joint variable path");
 	            return false;
 	        }
+
+	        // TODO: debug this duplicate issue
+            if (path[1].back() < 1e-6)
+                path.erase(path.begin());
 	    }
 	    else {
 	        return b_ret;
@@ -1638,8 +1643,7 @@ int GetStateIndexAfterTime(const std::vector<smpl::RobotState>& path, double t)
     }
 }
 
-static int collision_count = 0;
-bool CheckSnap(
+int CheckSnap(
     ConveyorPlanner* planner,
     const smpl::RobotState from_state,
     const std::vector<smpl::RobotState> path,
@@ -1691,17 +1695,16 @@ bool CheckSnap(
     //     max_time += 0.01;
     // }
     // ROS_WARN("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
-    bool ret = true;
+    int ret = 1;
     if (max_time > diff_time) {
         ROS_WARN("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
         // getchar();
-        ret = false;
+        ret = -1;
     }
 
     if (!planner->manip_checker->isStateToStateValid(from_state, to_state, true)) {
-        collision_count++;
-        ROS_WARN("Snap motion is in collision %d", collision_count);
-        ret = false;
+        ROS_WARN("Snap motion is in collision");
+        ret = -2;
     }
 
     return ret;
@@ -1730,6 +1733,18 @@ bool PreprocessConveyorPlanner(
     std::vector<int>& G_UNCOV,
     std::vector<int>& G_COV)
 {
+	auto pp_start = smpl::clock::now();
+
+	int num_goals_uncov = 0;
+	int num_goals_cov = 0;
+	int num_goals_cov_this = 0;
+	int num_paths = 0;
+	int num_states = 0;
+	int num_latching_tries = 0;
+	int num_latching_success = 0;
+	int num_latching_fails_time = 0;
+	int num_latching_fails_collision = 0;
+
     double t_start = start_state.joint_state.position[8];
 
     printf("\n");
@@ -1743,6 +1758,7 @@ bool PreprocessConveyorPlanner(
     int start_id_work = planner->start_id_;
     std::vector<std::vector<smpl::RobotState>> paths;
     ROS_INFO("Computing Root Paths...");
+    int uncov_before = G_UNCOV.size();
     auto ret = ComputeRootPaths(
         planner,
         start_state,
@@ -1758,110 +1774,147 @@ bool PreprocessConveyorPlanner(
     PrintRegion(G_UNCOV, 1);
     ROS_INFO("Covered after ComputeRootPaths(): %zu", G_COV.size());
     PrintRegion(G_COV, 1);
+    num_goals_cov_this = uncov_before - G_UNCOV.size();
 
     if (t_start >= planner->replan_cutoff_) {
         ROS_INFO("Start state %d is at Replan cutoff\n", planner->start_id_);
         ROS_INFO("###################    Returning Preprocess for Start id: %d    ###################", planner->start_id_);
-        return true;
+        // return true;
+    }
+    else {
+	    // TODO: starts_count should have local scope
+	    for (size_t i = 0; i < paths.size(); ++i) {
+	        ROS_INFO("     Working Path: %d Start id %d", i, start_id_work);
+	        // Assuming replan cutoff respects discretization, stupid
+	        auto last_state_idx = GetStateIndexAfterTime(paths[i], planner->replan_cutoff_);
+	        double t = paths[i][last_state_idx].back();
+	        auto G_UNCOV = G_COV;
+	        auto G_i = planner->hkey_dijkstra.getSubregion(start_id_work, i);
+	        planner->hkey_dijkstra.subtractStates(G_UNCOV, G_i);
+	        auto G_cov = G_i;
+	        ROS_INFO("     Uncovered init: %zu", G_UNCOV.size());
+	        PrintRegion(G_UNCOV, 3);
+	        ROS_INFO("     Covered init: %zu", G_cov.size());
+	        PrintRegion(G_cov, 3);
+	        // getchar();
+
+	        while (ros::ok() && (t > t_start + 1e-3)) {
+	            auto state_idx = GetStateIndexAtTime(paths[i], t);
+	            auto start_new = paths[i][state_idx];
+	            assert(t == start_new.back());
+	            ROS_INFO("         Start id: %d Path id: %d Time: %f", start_id_work, i, t);
+	            for (size_t j = 0; j < planner->home_paths_.size(); ++j) {
+	                ROS_INFO("             Check snap to home path %d", j);
+	                // set object init pose in cc based on new goal
+	                auto object_state_grid = planner->object_graph.getDiscreteCenter(planner->home_center_states_[j]);
+	                auto object_pose = ComputeObjectPose(object_state_grid, height);
+	                auto goal_pose = object_pose * grasps[0].inverse();
+	                planner->manip_checker->setObjectInitialPose(object_pose);
+	                //
+
+	                num_latching_tries++;
+	                auto ret = CheckSnap(planner, start_new, planner->home_paths_[j], 1e-3);
+	                if (ret == 1) {
+	                    ROS_INFO("             - Snap successful");
+	                    auto G_j = planner->hkey_dijkstra.getSubregion(0, j);
+	                    planner->hkey_dijkstra.subtractStates(G_UNCOV, G_j);
+	                    planner->hkey_dijkstra.addStates(G_cov, G_j);
+	                    ROS_INFO("             Uncovered after Snap: %zu", G_UNCOV.size());
+	                    PrintRegion(G_UNCOV, 3);
+	                    ROS_INFO("             Covered after Snap: %zu", G_cov.size());
+	                    PrintRegion(G_cov, 3);
+	                    num_latching_success++;
+	                }
+	                else {
+	                    SMPL_WARN("             - Failed to snap");
+	                    if (ret == -1)
+	                    	num_latching_fails_time++;
+	                    else if (ret == -2)
+	                    	num_latching_fails_collision++;
+	                    else
+	                    	ROS_WARN("Unknown ret value");
+	                }
+	                if (G_UNCOV.empty()) {
+	                    break;
+	                }
+	            }
+
+	            // break;
+	            // ROS_INFO("     Remaining states after latching: %zu", G_UNCOV.size());
+	            // for (auto id : G_UNCOV) {
+	            //     ROS_INFO("     %d",id);
+	            // }
+	            if (G_UNCOV.empty()) {
+	                ROS_INFO("         Snapping for Path %d covered everything at state %f", i, t);
+	                break;
+	            }
+
+	            // fill new start state
+	            moveit_msgs::RobotState start_state_next = start_state;
+	            for (size_t idx = 0; idx < start_new.size(); ++idx) {
+	                start_state_next.joint_state.position[idx + 1] = start_new[idx];
+	            }
+
+	            // start_id_next++;
+	            planner->start_id_++;
+	            size_t before_rem = G_UNCOV.size();
+	            auto ret = PreprocessConveyorPlanner(
+	                planner,
+	                start_state_next,
+	                // start_id_next,
+	                grasps,
+	                height,
+	                G_UNCOV,
+	                G_cov);
+	            size_t after_rem = G_UNCOV.size();
+
+	            if (after_rem == before_rem) {
+	                // start_id_next--;
+	                planner->start_id_--;
+	            }
+
+	            ROS_INFO("         Start id: %d Path id: %d Uncovered after Preprocess: %zu", start_id_work, i, G_UNCOV.size());
+	            PrintRegion(G_UNCOV, 2);
+	            ROS_INFO("         Start id: %d Path id: %d Covered after Preprocess: %zu", start_id_work, i, G_cov.size());
+	            PrintRegion(G_cov, 2);
+
+	            if (G_UNCOV.empty()) {
+	                ROS_INFO("         Preprocess for Path %d covered everything at state %f", i, t);
+	                break;
+	            }
+	            t -= planner->replan_resolution_;
+	            // ROS_INFO("         Start id: %d Path id: %d Decrement time: %f", planner->start_id_, i, t);
+	            // getchar();
+	        }
+	    }
     }
 
-    // TODO: starts_count should have local scope
-    for (size_t i = 0; i < paths.size(); ++i) {
-        ROS_INFO("     Working Path: %d Start id %d", i, start_id_work);
-        // Assuming replan cutoff respects discretization, stupid
-        auto last_state_idx = GetStateIndexAfterTime(paths[i], planner->replan_cutoff_);
-        double t = paths[i][last_state_idx].back();
-        auto G_UNCOV = G_COV;
-        auto G_i = planner->hkey_dijkstra.getSubregion(start_id_work, i);
-        planner->hkey_dijkstra.subtractStates(G_UNCOV, G_i);
-        auto G_cov = G_i;
-        ROS_INFO("     Uncovered init: %zu", G_UNCOV.size());
-        PrintRegion(G_UNCOV, 3);
-        ROS_INFO("     Covered init: %zu", G_cov.size());
-        PrintRegion(G_cov, 3);
-        // getchar();
+    if (!paths.empty()) {
+    	auto pp_time = std::chrono::duration<double>(smpl::clock::now() - pp_start).count();
+	    num_goals_uncov = G_UNCOV.size();
+	    num_goals_cov = G_COV.size();
+	    num_paths = paths.size();
+	    num_states = 0;
+	    for (const auto& path : paths)
+	    	num_states += path.size();
 
-        while (ros::ok() && (t > t_start + 1e-3)) {
-            auto state_idx = GetStateIndexAtTime(paths[i], t);
-            auto start_new = paths[i][state_idx];
-            assert(t == start_new.back());
-            ROS_INFO("         Start id: %d Path id: %d Time: %f", start_id_work, i, t);
-            for (size_t j = 0; j < planner->home_paths_.size(); ++j) {
-                ROS_INFO("             Check snap to home path %d", j);
-                // set object init pose in cc based on new goal
-                auto object_state_grid = planner->object_graph.getDiscreteCenter(planner->home_center_states_[j]);
-                auto object_pose = ComputeObjectPose(object_state_grid, height);
-                auto goal_pose = object_pose * grasps[0].inverse();
-                planner->manip_checker->setObjectInitialPose(object_pose);
-                //
-
-                if (CheckSnap(planner, start_new, planner->home_paths_[j], 1e-3)) {
-                    ROS_INFO("             - Snap successful");
-                    auto G_j = planner->hkey_dijkstra.getSubregion(0, j);
-                    planner->hkey_dijkstra.subtractStates(G_UNCOV, G_j);
-                    planner->hkey_dijkstra.addStates(G_cov, G_j);
-                    ROS_INFO("             Uncovered after Snap: %zu", G_UNCOV.size());
-                    PrintRegion(G_UNCOV, 3);
-                    ROS_INFO("             Covered after Snap: %zu", G_cov.size());
-                    PrintRegion(G_cov, 3);
-                }
-                else {
-                    SMPL_WARN("             - Failed to snap");
-                }
-                if (G_UNCOV.empty()) {
-                    break;
-                }
-            }
-
-            // break;
-            // ROS_INFO("     Remaining states after latching: %zu", G_UNCOV.size());
-            // for (auto id : G_UNCOV) {
-            //     ROS_INFO("     %d",id);
-            // }
-            if (G_UNCOV.empty()) {
-                ROS_INFO("         Snapping for Path %d covered everything at state %f", i, t);
-                break;
-            }
-
-            // fill new start state
-            moveit_msgs::RobotState start_state_next = start_state;
-            for (size_t idx = 0; idx < start_new.size(); ++idx) {
-                start_state_next.joint_state.position[idx + 1] = start_new[idx];
-            }
-
-            // start_id_next++;
-            planner->start_id_++;
-            size_t before_rem = G_UNCOV.size();
-            auto ret = PreprocessConveyorPlanner(
-                planner,
-                start_state_next,
-                // start_id_next,
-                grasps,
-                height,
-                G_UNCOV,
-                G_cov);
-            size_t after_rem = G_UNCOV.size();
-
-            if (after_rem == before_rem) {
-                // start_id_next--;
-                planner->start_id_--;
-            }
-
-            ROS_INFO("         Start id: %d Path id: %d Uncovered after Preprocess: %zu", start_id_work, i, G_UNCOV.size());
-            PrintRegion(G_UNCOV, 2);
-            ROS_INFO("         Start id: %d Path id: %d Covered after Preprocess: %zu", start_id_work, i, G_cov.size());
-            PrintRegion(G_cov, 2);
-
-            if (G_UNCOV.empty()) {
-                ROS_INFO("         Preprocess for Path %d covered everything at state %f", i, t);
-                break;
-            }
-            t -= planner->replan_resolution_;
-            // ROS_INFO("         Start id: %d Path id: %d Decrement time: %f", planner->start_id_, i, t);
-            // getchar();
-        }
+	    std::ofstream ofs("/home/fislam/rss_stats/pp_stats.csv", std::ofstream::out | std::ofstream::app);
+		ofs << "\t" << 
+			start_id_work << "\t" <<
+			num_goals_uncov << "\t" <<
+			num_goals_cov << "\t" <<
+			num_goals_cov_this << "\t" << 
+			num_paths << "\t" <<
+			num_states << "\t" <<
+			num_latching_tries << "\t" <<
+			num_latching_success << "\t" <<
+			num_latching_fails_time << "\t" <<
+			num_latching_fails_collision << "\t" <<
+			t_start << "\t" <<
+			pp_time << "\n";
+		ofs.close();
+	    ROS_INFO("###################    End of Preprocess for Start id: %d    ###################", start_id_work);
     }
-    ROS_INFO("###################    End of Preprocess for Start id: %d    ###################", start_id_work);
 
 	return true;
 }
@@ -1876,6 +1929,14 @@ bool PreprocessConveyorPlannerMain(
     // remove all stored data
     std::string cmd = "exec rm -r " + planner->main_dir_ + "/*";
     auto sys_ret = system(cmd.c_str());
+
+   	std::ofstream ofs;
+	ofs.open("/home/fislam/rss_stats/pp_stats.csv");
+	ofs << "\t" << "start" << "\t" << "goals_uncov" << "\t" << "goals_cov" << "\t" << "goals_cov_this" << "\t" 
+		<< "paths" << "\t" << "states" << "\t"
+		<< "latching_tries" << "\t" << "latching_success" << "\t" << "latching_fails_time" << "\t" << "latching_fails_collision" << "\t"
+		<< "t_start" << "\t" << "pp_time" << "\n";
+	ofs.close();
 
     auto G_full = planner->hkey_dijkstra.getAllStates();
     std::vector<int> G_cov;
@@ -2405,7 +2466,7 @@ bool QueryReplanningTestsPerceptionPlanner(
     double speed = 0.2;
 
     // **** Change for each alg ******//
-    double t_bound = 2.0;
+    double t_bound = 0.2;
     //*******************************//
 
     double t_offset = t_perception + t_bound + t_buff;
@@ -2432,6 +2493,7 @@ bool QueryReplanningTestsPerceptionPlanner(
         // getchar();
 
         std::vector<double> object_state = {x_plan, y_plan, yaw_plan};
+        object_state = {0.58, 1.25, 1.745329};
 
         auto start_state = home_state;
         printf("Running test: %d start time %f \n", tid, home_state.joint_state.position[8]);
@@ -2564,6 +2626,8 @@ bool QueryReplanningTestsPerceptionPlanner(
                 // break;
             }
 
+            // printf("offset %f", t_offset);
+            // getchar();
             replan_state_time += t_offset + planner->replan_resolution_;     // may be add some buffer here?
             qid++;
         }   // replan cycle end
