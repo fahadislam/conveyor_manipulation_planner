@@ -603,7 +603,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
     // calls++;
     // printf("calls %d\n", calls);
     // Constants
-    double dt = 0.02;
+    double dt = 0.01;
     double gain_p = 1.0;
     double gain_r = 1.0;
     double gripping_time = 0.5;
@@ -699,7 +699,7 @@ bool ConveyorManipLatticeActionSpace::computeAdaptiveAction(
                     SMPL_DEBUG("Failed to lift up");
                     // failures_lift++;
                     // printf("failures_lift %d\n", failures_lift);
-                    // return false;
+                    return false;
                 }
                 wp = q_;
                 double time_state = action.back().back() + lift_time;

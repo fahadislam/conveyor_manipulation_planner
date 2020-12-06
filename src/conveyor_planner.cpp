@@ -1651,7 +1651,9 @@ int CheckSnap(
 {
     auto to_idx = GetStateIndexAtTime(path, from_state.back() + planner->replan_resolution_);
     auto to_state = path[to_idx];
-    // for (const auto& wp : path) {
+ //    for (const auto& wp : path) {
+	//     ROS_INFO_STREAM("waypoint: " << wp);
+	// }
     //     if (fabs(wp.back() - from_state.back()) >= planner->replan_resolution_ - 1e-3) {
     //         to_state = wp;
     //         break;
@@ -1683,6 +1685,7 @@ int CheckSnap(
             continue;
         }
         auto t = 0.0;
+        printf("joint %zu from %f to %f\n", j, from_pos, to_pos);
         if (planner->robot_model->isContinuous(j)) {
             t = smpl::angles::shortest_angle_dist(from_pos, to_pos) / vel;
         } else {
@@ -1694,7 +1697,7 @@ int CheckSnap(
     // if (from_state.back() + planner->replan_resolution_ > planner->replan_cutoff_) {
     //     max_time += 0.01;
     // }
-    // ROS_WARN("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
+    ROS_WARN("time diff: %f, min time %f", diff_time, max_time);
     int ret = 1;
     if (max_time > diff_time) {
         ROS_WARN("Cannot snap in time. time diff: %f, min time %f", diff_time, max_time);
@@ -2493,7 +2496,6 @@ bool QueryReplanningTestsPerceptionPlanner(
         // getchar();
 
         std::vector<double> object_state = {x_plan, y_plan, yaw_plan};
-        object_state = {0.58, 1.25, 1.745329};
 
         auto start_state = home_state;
         printf("Running test: %d start time %f \n", tid, home_state.joint_state.position[8]);
