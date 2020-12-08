@@ -1630,7 +1630,7 @@ void MovePathsCloser(
     }
 }
 #endif
-bool CheckSnap(
+int CheckSnap(
     ConveyorPlanner* planner,
     smpl::RobotState from_state,
     const std::vector<smpl::RobotState> path,
@@ -1688,8 +1688,8 @@ bool CheckSnap(
         // printf("to pos %.2f to vel %.2f\n", to_state[j], to_state[j+nj]);
 
         if (planner->robot_model->isContinuous(j)) {
-            if (j == 6)
-                printf("before | from %f to %f\n", from_state[j], to_state[j]);
+            // if (j == 6)
+            //     printf("before | from %f to %f\n", from_state[j], to_state[j]);
             double diff = smpl::shortest_angle_diff(to_state[j], from_state[j]);
             to_state[j] = from_state[j] + diff;
             if (j == 6) {   // because the gripper is symmetric
@@ -1700,8 +1700,8 @@ bool CheckSnap(
                     to_state[j] += M_PI;
                 }
             }
-            if (j == 6)
-                printf("after | from %f to %f diff %f\n", from_state[j], to_state[j], diff);
+            // if (j == 6)
+            //     printf("after | from %f to %f diff %f\n", from_state[j], to_state[j], diff);
             // from_state[j] = smpl::normalize_angle(from_state[j]);
             // to_state[j] = smpl::normalize_angle(from_state[j]);
             // if (j == 6) {
@@ -1729,7 +1729,7 @@ bool CheckSnap(
             if (std::fabs(velocities[j]) > planner->robot_model->velLimit(j)) {
                 ROS_WARN("Cubic: Joint %d violates velocity limit | mag: %.2f limit %.2f",
                     j, std::fabs(velocities[j]), planner->robot_model->velLimit(j));
-                return false;
+                return -1;
             }       
             accelerations[j] = points_all[j][i].a;
             // printf("acc %d %.2f\n", j, accelerations[j]);
@@ -1738,82 +1738,82 @@ bool CheckSnap(
         std::vector<double> torques(nj);
         if (!planner->manip_actions.checkInverseDynamics(positions, velocities, accelerations, torques, true)) {
             ROS_WARN("Cubic: Snap motion violates torque limits, joint");
-            return false;
+            return -1;
         }
     }
     }
     //=============================================================
 
-    {
-    std::vector<std::vector<PathPoint>> points_all;
-    unsigned int nj = planner->robot_model->jointVariableCount();
-    int samples = diff_time / 0.02;
-    for (int j = 0; j < nj; ++j) {
-        // printf("to pos %.2f to vel %.2f\n", to_state[j], to_state[j+nj]);
-        // auto points = InterpolateCubicProfile(
-        //     from_state[j], to_state[j],
-        //     from_state[j+nj], to_state[j+nj],
-        //     diff_time,
-        //     samples);
-        double a_i = (to_state[j+nj] - from_state[j+nj]) / diff_time;
-        double a_f = a_i;
-        // double a_f = 0.0;
-        // if (j == 6) {
-        //     ROS_INFO("from %f to %f\n", smpl::normalize_angle(from_state[j]),
-        //         smpl::normalize_angle(to_state[j]));
-        // }
-        if (planner->robot_model->isContinuous(j)) {
-            // printf("before | from %f to %f\n", from_state[j], to_state[j]);
-            double diff = smpl::shortest_angle_diff(from_state[j], to_state[j]);
-            to_state[j] = from_state[j] - diff;
-            // printf("after | from %f to %f\n", from_state[j], to_state[j]);
-        }
-        // if (j == 6) {
-            // auto points = InterpolateCubicProfile(
-            //                 from_state[j], to_state[j],
-            //                 // smpl::normalize_angle(from_state[j]), smpl::normalize_angle(to_state[j]),    //7.69
-            //                 from_state[j+nj], to_state[j+nj],
-            //                 diff_time,
-            //                 samples);
-            //                 points_all.push_back(points);
-        // }
-        // else {
-            auto points = InterpolateQuinticProfile(
-            // smpl::normalize_angle(from_state[j]), smpl::normalize_angle(to_state[j]),    //7.69
-            from_state[j], to_state[j],
-            from_state[j+nj], to_state[j+nj],
-            // a_i, a_f,
-            0.0, 0.0,
-            diff_time,
-            samples);
-            points_all.push_back(points);
-        // }
-    }
+    // {
+    // std::vector<std::vector<PathPoint>> points_all;
+    // unsigned int nj = planner->robot_model->jointVariableCount();
+    // int samples = diff_time / 0.02;
+    // for (int j = 0; j < nj; ++j) {
+    //     // printf("to pos %.2f to vel %.2f\n", to_state[j], to_state[j+nj]);
+    //     // auto points = InterpolateCubicProfile(
+    //     //     from_state[j], to_state[j],
+    //     //     from_state[j+nj], to_state[j+nj],
+    //     //     diff_time,
+    //     //     samples);
+    //     double a_i = (to_state[j+nj] - from_state[j+nj]) / diff_time;
+    //     double a_f = a_i;
+    //     // double a_f = 0.0;
+    //     // if (j == 6) {
+    //     //     ROS_INFO("from %f to %f\n", smpl::normalize_angle(from_state[j]),
+    //     //         smpl::normalize_angle(to_state[j]));
+    //     // }
+    //     if (planner->robot_model->isContinuous(j)) {
+    //         // printf("before | from %f to %f\n", from_state[j], to_state[j]);
+    //         double diff = smpl::shortest_angle_diff(from_state[j], to_state[j]);
+    //         to_state[j] = from_state[j] - diff;
+    //         // printf("after | from %f to %f\n", from_state[j], to_state[j]);
+    //     }
+    //     // if (j == 6) {
+    //         // auto points = InterpolateCubicProfile(
+    //         //                 from_state[j], to_state[j],
+    //         //                 // smpl::normalize_angle(from_state[j]), smpl::normalize_angle(to_state[j]),    //7.69
+    //         //                 from_state[j+nj], to_state[j+nj],
+    //         //                 diff_time,
+    //         //                 samples);
+    //         //                 points_all.push_back(points);
+    //     // }
+    //     // else {
+    //         auto points = InterpolateQuinticProfile(
+    //         // smpl::normalize_angle(from_state[j]), smpl::normalize_angle(to_state[j]),    //7.69
+    //         from_state[j], to_state[j],
+    //         from_state[j+nj], to_state[j+nj],
+    //         // a_i, a_f,
+    //         0.0, 0.0,
+    //         diff_time,
+    //         samples);
+    //         points_all.push_back(points);
+    //     // }
+    // }
 
-    for (int i = 0; i < samples; ++i) {
-        std::vector<double> positions(nj);
-        std::vector<double> velocities(nj);
-        std::vector<double> accelerations(nj);
-        for (int j = 0; j < nj; ++j) {
-            positions[j] = points_all[j][i].p;
-            velocities[j] = points_all[j][i].v;
-            // check vel limit
-            if (std::fabs(velocities[j]) > planner->robot_model->velLimit(j)) {
-                ROS_WARN("Quintic: Joint %d violates velocity limit | mag: %.2f limit %.2f",
-                    j, std::fabs(velocities[j]), planner->robot_model->velLimit(j));
-                return false;
-            }
-            accelerations[j] = points_all[j][i].a;
-            // printf("acc %d %.2f\n", j, accelerations[j]);
-        }
-        // printf("\n");
-        std::vector<double> torques(nj);
-        if (!planner->manip_actions.checkInverseDynamics(positions, velocities, accelerations, torques, true)) {
-            ROS_WARN("Quintic: Snap motion violates torque limits, joint");
-            return false;
-        }
-    }
-    }
+    // for (int i = 0; i < samples; ++i) {
+    //     std::vector<double> positions(nj);
+    //     std::vector<double> velocities(nj);
+    //     std::vector<double> accelerations(nj);
+    //     for (int j = 0; j < nj; ++j) {
+    //         positions[j] = points_all[j][i].p;
+    //         velocities[j] = points_all[j][i].v;
+    //         // check vel limit
+    //         if (std::fabs(velocities[j]) > planner->robot_model->velLimit(j)) {
+    //             ROS_WARN("Quintic: Joint %d violates velocity limit | mag: %.2f limit %.2f",
+    //                 j, std::fabs(velocities[j]), planner->robot_model->velLimit(j));
+    //             return -1;
+    //         }
+    //         accelerations[j] = points_all[j][i].a;
+    //         // printf("acc %d %.2f\n", j, accelerations[j]);
+    //     }
+    //     // printf("\n");
+    //     std::vector<double> torques(nj);
+    //     if (!planner->manip_actions.checkInverseDynamics(positions, velocities, accelerations, torques, true)) {
+    //         ROS_WARN("Quintic: Snap motion violates torque limits, joint");
+    //         return -1;
+    //     }
+    // }
+    // }
     // getchar();
     //=============================================================
 #endif
@@ -1824,10 +1824,10 @@ bool CheckSnap(
 
     if (!planner->manip_checker->isStateToStateValid(from_state, to_state)) {
         ROS_WARN("Snap motion is in collision");
-        return false;
+        return -2;
     }
 
-    return true;
+    return 1;
 }
 
 bool ComputeRootPaths(
@@ -2131,6 +2131,18 @@ bool PreprocessConveyorPlanner(
     std::vector<int>& G_UNCOV,
     std::vector<int>& G_COV)
 {
+    auto pp_start = smpl::clock::now();
+
+    int num_goals_uncov = 0;
+    int num_goals_cov = 0;
+    int num_goals_cov_this = 0;
+    int num_paths = 0;
+    int num_states = 0;
+    int num_latching_tries = 0;
+    int num_latching_success = 0;
+    int num_latching_fails_time = 0;
+    int num_latching_fails_collision = 0;
+
     double t_start = start_state.joint_state.position[8];
 
     printf("\n");
@@ -2144,6 +2156,7 @@ bool PreprocessConveyorPlanner(
     int start_id_work = planner->start_id_;
     std::vector<std::vector<smpl::RobotState>> paths;
     ROS_INFO("Computing Root Paths...");
+    int uncov_before = G_UNCOV.size();    
     auto ret = ComputeRootPaths(
         planner,
         start_state,
@@ -2159,114 +2172,151 @@ bool PreprocessConveyorPlanner(
     PrintRegion(G_UNCOV, 1);
     ROS_INFO("Covered after ComputeRootPaths(): %zu", G_COV.size());
     PrintRegion(G_COV, 1);
+    num_goals_cov_this = uncov_before - G_UNCOV.size();
 
     if (t_start >= planner->replan_cutoff_) {
         ROS_INFO("Start state %d is at Replan cutoff\n", planner->start_id_);
         ROS_INFO("###################    Returning Preprocess for Start id: %d    ###################", planner->start_id_);
-        return true;
     }
+    else {
+        // TODO: starts_count should have local scope
+        for (size_t i = 0; i < paths.size(); ++i) {
+            ROS_INFO("     Working Path: %d Start id %d", i, start_id_work);
+            // Assuming replan cutoff respects discretization, stupid
+            auto last_state_idx = GetStateIndexAfterTime(paths[i], planner->replan_cutoff_);
+            double t = paths[i][last_state_idx].back();
+            auto G_UNCOV = G_COV;
+            auto G_i = planner->hkey_dijkstra.getSubregion(start_id_work, i);
+            planner->hkey_dijkstra.subtractStates(G_UNCOV, G_i);
+            auto G_cov = G_i;
+            ROS_INFO("     Uncovered init: %zu", G_UNCOV.size());
+            PrintRegion(G_UNCOV, 3);
+            ROS_INFO("     Covered init: %zu", G_cov.size());
+            PrintRegion(G_cov, 3);
+            // getchar();
 
-    // TODO: starts_count should have local scope
-    for (size_t i = 0; i < paths.size(); ++i) {
-        ROS_INFO("     Working Path: %d Start id %d", i, start_id_work);
-        // Assuming replan cutoff respects discretization, stupid
-        auto last_state_idx = GetStateIndexAfterTime(paths[i], planner->replan_cutoff_);
-        double t = paths[i][last_state_idx].back();
-        auto G_UNCOV = G_COV;
-        auto G_i = planner->hkey_dijkstra.getSubregion(start_id_work, i);
-        planner->hkey_dijkstra.subtractStates(G_UNCOV, G_i);
-        auto G_cov = G_i;
-        ROS_INFO("     Uncovered init: %zu", G_UNCOV.size());
-        PrintRegion(G_UNCOV, 3);
-        ROS_INFO("     Covered init: %zu", G_cov.size());
-        PrintRegion(G_cov, 3);
-        // getchar();
+            while (ros::ok() && (t > t_start + 1e-3)) {
+                printf("t %.2f\n", t);
+                auto state_idx = GetStateIndexAfterTime(paths[i], t);
+                printf("state_idx %d\n", state_idx);
+                printf("path size %zu \n", paths[i].size());
+                auto start_new = paths[i][state_idx];
+                assert(t == start_new.back());
+                ROS_INFO("         Start id: %d Path id: %d Time: %f", start_id_work, i, t);
+                for (size_t j = 0; j < planner->home_paths_.size(); ++j) {
+                    ROS_INFO("             Check snap to home path %d", j);
+                    // set object init pose in cc based on new goal
+                    auto object_state_grid = planner->object_graph.getDiscreteCenter(planner->home_center_states_[j]);
+                    auto object_pose = ComputeObjectPose(object_state_grid, height);
+                    auto goal_pose = object_pose * grasps[0].inverse();
+                    planner->manip_checker->setObjectInitialPose(object_pose);
+                    //
 
-        while (ros::ok() && (t > t_start + 1e-3)) {
-            printf("t %.2f\n", t);
-            auto state_idx = GetStateIndexAfterTime(paths[i], t);
-            printf("state_idx %d\n", state_idx);
-            printf("path size %zu \n", paths[i].size());
-            auto start_new = paths[i][state_idx];
-            assert(t == start_new.back());
-            ROS_INFO("         Start id: %d Path id: %d Time: %f", start_id_work, i, t);
-            for (size_t j = 0; j < planner->home_paths_.size(); ++j) {
-                ROS_INFO("             Check snap to home path %d", j);
-                // set object init pose in cc based on new goal
-                auto object_state_grid = planner->object_graph.getDiscreteCenter(planner->home_center_states_[j]);
-                auto object_pose = ComputeObjectPose(object_state_grid, height);
-                auto goal_pose = object_pose * grasps[0].inverse();
-                planner->manip_checker->setObjectInitialPose(object_pose);
-                //
-
-                if (CheckSnap(planner, start_new, planner->home_paths_[j], 1e-3)) {
-                    ROS_INFO("             - Snap successful");
-                    auto G_j = planner->hkey_dijkstra.getSubregion(0, j);
-                    planner->hkey_dijkstra.subtractStates(G_UNCOV, G_j);
-                    planner->hkey_dijkstra.addStates(G_cov, G_j);
-                    ROS_INFO("             Uncovered after Snap: %zu", G_UNCOV.size());
-                    PrintRegion(G_UNCOV, 3);
-                    ROS_INFO("             Covered after Snap: %zu", G_cov.size());
-                    PrintRegion(G_cov, 3);
+                    num_latching_tries++;
+                    auto ret = CheckSnap(planner, start_new, planner->home_paths_[j], 1e-3);
+                    if (ret == 1) {
+                        ROS_INFO("             - Snap successful");
+                        auto G_j = planner->hkey_dijkstra.getSubregion(0, j);
+                        planner->hkey_dijkstra.subtractStates(G_UNCOV, G_j);
+                        planner->hkey_dijkstra.addStates(G_cov, G_j);
+                        ROS_INFO("             Uncovered after Snap: %zu", G_UNCOV.size());
+                        PrintRegion(G_UNCOV, 3);
+                        ROS_INFO("             Covered after Snap: %zu", G_cov.size());
+                        PrintRegion(G_cov, 3);
+                        num_latching_success++;
+                    }
+                    else {
+                        SMPL_WARN("             - Failed to snap");
+                        if (ret == -1)
+                            num_latching_fails_time++;
+                        else if (ret == -2)
+                            num_latching_fails_collision++;
+                        else
+                            ROS_WARN("Unknown ret value");
+                    }
+                    if (G_UNCOV.empty()) {
+                        break;
+                    }
                 }
-                else {
-                    SMPL_WARN("             - Failed to snap");
-                }
+
+                // break;
+                // ROS_INFO("     Remaining states after latching: %zu", G_UNCOV.size());
+                // for (auto id : G_UNCOV) {
+                //     ROS_INFO("     %d",id);
+                // }
                 if (G_UNCOV.empty()) {
+                    ROS_INFO("         Snapping for Path %d covered everything at state %f", i, t);
                     break;
                 }
+
+                // fill new start state
+                moveit_msgs::RobotState start_state_next = start_state;
+                for (size_t idx = 0; idx < 7; ++idx) {
+                    start_state_next.joint_state.position[idx + 1] = start_new[idx];
+                    start_state_next.joint_state.velocity[idx + 1] = start_new[idx + 8];
+                }
+                start_state_next.joint_state.position[8] = start_new.back();
+
+                // start_id_next++;
+                planner->start_id_++;
+                size_t before_rem = G_UNCOV.size();
+                auto ret = PreprocessConveyorPlanner(
+                    planner,
+                    start_state_next,
+                    // start_id_next,
+                    grasps,
+                    height,
+                    G_UNCOV,
+                    G_cov);
+                size_t after_rem = G_UNCOV.size();
+
+                if (after_rem == before_rem) {
+                    // start_id_next--;
+                    planner->start_id_--;
+                }
+
+                ROS_INFO("         Start id: %d Path id: %d Uncovered after Preprocess: %zu", start_id_work, i, G_UNCOV.size());
+                PrintRegion(G_UNCOV, 2);
+                ROS_INFO("         Start id: %d Path id: %d Covered after Preprocess: %zu", start_id_work, i, G_cov.size());
+                PrintRegion(G_cov, 2);
+
+                if (G_UNCOV.empty()) {
+                    ROS_INFO("         Preprocess for Path %d covered everything at state %f", i, t);
+                    break;
+                }
+                t -= planner->replan_resolution_;
+                // ROS_INFO("         Start id: %d Path id: %d Decrement time: %f", planner->start_id_, i, t);
+                // getchar();
             }
-
-            // break;
-            // ROS_INFO("     Remaining states after latching: %zu", G_UNCOV.size());
-            // for (auto id : G_UNCOV) {
-            //     ROS_INFO("     %d",id);
-            // }
-            if (G_UNCOV.empty()) {
-                ROS_INFO("         Snapping for Path %d covered everything at state %f", i, t);
-                break;
-            }
-
-            // fill new start state
-            moveit_msgs::RobotState start_state_next = start_state;
-            for (size_t idx = 0; idx < 7; ++idx) {
-                start_state_next.joint_state.position[idx + 1] = start_new[idx];
-                start_state_next.joint_state.velocity[idx + 1] = start_new[idx + 8];
-            }
-            start_state_next.joint_state.position[8] = start_new.back();
-
-            // start_id_next++;
-            planner->start_id_++;
-            size_t before_rem = G_UNCOV.size();
-            auto ret = PreprocessConveyorPlanner(
-                planner,
-                start_state_next,
-                // start_id_next,
-                grasps,
-                height,
-                G_UNCOV,
-                G_cov);
-            size_t after_rem = G_UNCOV.size();
-
-            if (after_rem == before_rem) {
-                // start_id_next--;
-                planner->start_id_--;
-            }
-
-            ROS_INFO("         Start id: %d Path id: %d Uncovered after Preprocess: %zu", start_id_work, i, G_UNCOV.size());
-            PrintRegion(G_UNCOV, 2);
-            ROS_INFO("         Start id: %d Path id: %d Covered after Preprocess: %zu", start_id_work, i, G_cov.size());
-            PrintRegion(G_cov, 2);
-
-            if (G_UNCOV.empty()) {
-                ROS_INFO("         Preprocess for Path %d covered everything at state %f", i, t);
-                break;
-            }
-            t -= planner->replan_resolution_;
-            // ROS_INFO("         Start id: %d Path id: %d Decrement time: %f", planner->start_id_, i, t);
-            // getchar();
         }
     }
+
+    if (!paths.empty()) {
+        auto pp_time = std::chrono::duration<double>(smpl::clock::now() - pp_start).count();
+        num_goals_uncov = G_UNCOV.size();
+        num_goals_cov = G_COV.size();
+        num_paths = paths.size();
+        num_states = 0;
+        for (const auto& path : paths)
+            num_states += path.size();
+
+        std::ofstream ofs("/home/fislam/rss_stats/pp_stats.csv", std::ofstream::out | std::ofstream::app);
+        ofs << "\t" << 
+            start_id_work << "\t" <<
+            num_goals_uncov << "\t" <<
+            num_goals_cov << "\t" <<
+            num_goals_cov_this << "\t" << 
+            num_paths << "\t" <<
+            num_states << "\t" <<
+            num_latching_tries << "\t" <<
+            num_latching_success << "\t" <<
+            num_latching_fails_time << "\t" <<
+            num_latching_fails_collision << "\t" <<
+            t_start << "\t" <<
+            pp_time << "\n";
+        ofs.close();
+    }
+
     ROS_INFO("###################    End of Preprocess for Start id: %d    ###################", start_id_work);
 
 	return true;
@@ -2279,6 +2329,14 @@ bool PreprocessConveyorPlannerMain(
     double height)
 {
     ROS_INFO("Preprocessing Main Started!\n");
+
+    std::ofstream ofs;
+    ofs.open("/home/fislam/rss_stats/pp_stats.csv");
+    ofs << "\t" << "start" << "\t" << "goals_uncov" << "\t" << "goals_cov" << "\t" << "goals_cov_this" << "\t" 
+        << "paths" << "\t" << "states" << "\t"
+        << "latching_tries" << "\t" << "latching_success" << "\t" << "latching_fails_time" << "\t" << "latching_fails_collision" << "\t"
+        << "t_start" << "\t" << "pp_time" << "\n";
+    ofs.close();
 
     // InterpolateQuinticProfile(-0.0488,0.0137,0.285, -0.053, 0, 0, 0.5, 10);
     // auto points = InterpolateCubicProfile(
@@ -2685,7 +2743,7 @@ bool QueryNormalPlanner(
 	}
 
     PlanPathParams params;
-    params.allowed_time = 1000.0;
+    params.allowed_time = 2.0;
     params.rc_constrained = false;
     params.shortcut_prerc = true;
     params.only_check_success = false;
@@ -2813,15 +2871,18 @@ bool QueryReplanningTestsPerceptionPlanner(
     double height,
     int num_tests)
 {
-    Planner p = Planner::CONST_TIME;
+    // Planner p = Planner::CONST_TIME;
     // Planner p = Planner::NORMAL;
-    // Planner p = Planner::EGRAPH;
+    Planner p = Planner::EGRAPH;
 
     int failed_count = 0;
-    std::ofstream ofs("/home/fislam/rss_stats/const.csv");
+    // std::ofstream ofs("/home/fislam/rss_stats/const.csv");
     // std::ofstream ofs("/home/fislam/rss_stats/normal.csv");
     // std::ofstream ofs("/home/fislam/rss_stats/egraph.csv");
 
+    // std::ofstream ofs("/home/fislam/rss_stats/const_kino.csv");
+    // std::ofstream ofs("/home/fislam/rss_stats/normal_kino.csv");
+    std::ofstream ofs("/home/fislam/rss_stats/egraph_kino.csv");
     // params
     double noise_trans = 0.05;
     double noise_yaw = 2 * M_PI;
@@ -2835,7 +2896,7 @@ bool QueryReplanningTestsPerceptionPlanner(
     double speed = 0.2;
 
     // **** Change for each alg ******//
-    double t_bound = 0.25;
+    double t_bound = 0.5;
     //*******************************//
 
     double t_offset = t_perception + t_bound + t_buff;
@@ -2862,6 +2923,7 @@ bool QueryReplanningTestsPerceptionPlanner(
         // getchar();
 
         std::vector<double> object_state = {x_plan, y_plan, yaw_plan};
+        // object_state = {0.56, 1.25, 2.094395};
 
         auto start_state = home_state;
         printf("Running test: %d start time %f \n", tid, home_state.joint_state.position[8]);
@@ -2979,7 +3041,7 @@ bool QueryReplanningTestsPerceptionPlanner(
             }
             ofs << start_state.joint_state.position[8] << '\t';
             ofs << planner->egraph_planner->get_n_expands() << '\t';
-            // ofs << planning_time << '\t';
+            ofs << planning_time << '\t';
             // if (p != Planner::EGRAPH) {
                 ofs << planner->egraph_planner->get_final_eps_planning_time() << '\t';
             // }
@@ -3003,7 +3065,7 @@ bool QueryReplanningTestsPerceptionPlanner(
 
         planner->current_path_.clear();
     }   // tests end
-    ROS_INFO("Failed count %f", failed_count);
+    ROS_INFO("Failed count %d", failed_count);
 
     return true;
 }
@@ -3345,7 +3407,7 @@ bool QueryEgraphPlanner(
 
     std::vector<smpl::RobotState> path;
     PlanPathParams params;
-    params.allowed_time = 2.0;
+    params.allowed_time = 0.5;
     params.rc_constrained = false;
     params.only_check_success = false;
 
@@ -3376,7 +3438,7 @@ bool QueryRandomTestsEgraphPlanner(
     // Construct egraph first
     int num_eg = 5;
     std::string egraph_dir = "/home/fislam/egraph/";
-    auto sys_ret = system(("exec rm -r " + egraph_dir + "*").c_str());
+    // auto sys_ret = system(("exec rm -r " + egraph_dir + "*").c_str());
     int count = 0;
     while (count < num_eg) {
         auto state_id = planner->hkey_dijkstra.sampleObjectState(0);
@@ -3390,7 +3452,6 @@ bool QueryRandomTestsEgraphPlanner(
 
         auto object_pose = ComputeObjectPose(object_state, height);
         auto goal_pose = object_pose * grasps[0].inverse();
-
         // update collision checker for the new object pose
         planner->manip_checker->setObjectInitialPose(object_pose);
 
@@ -3401,19 +3462,18 @@ bool QueryRandomTestsEgraphPlanner(
             ROS_ERROR("Failed to initialize Generic Egraph heuristic");
             return false;
         }
-
         std::vector<smpl::RobotState> path;
         double intercept_time;
         PlanPathParams params;
         params.allowed_time = 10;
         params.rc_constrained = false;
         params.only_check_success = false;
+        params.update_egraph = true;
 
         bool ret = PlanRobotPath(planner, start_state, goal_pose, path, intercept_time, params);
         if (!ret) {
             continue;
         }
-
         moveit_msgs::RobotTrajectory root_traj;
         ConvertJointVariablePathToJointTrajectory(
             planner->robot_model,
