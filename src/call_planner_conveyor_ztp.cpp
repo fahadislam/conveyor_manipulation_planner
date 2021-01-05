@@ -52,6 +52,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <smpl/angles.h>
 #include <smpl/debug/marker_conversions.h>
+#include <smpl/debug/marker_utils.h>
 #include <smpl/debug/visualizer_ros.h>
 #include <smpl/stl/memory.h>
 
@@ -1136,6 +1137,16 @@ int main(int argc, char* argv[])
 
     cc.setWorldToModelTransform(Eigen::Affine3d::Identity());
 
+    // visualize conveyor
+#if 0
+    auto* vis_name = "conveyor";
+    auto conveyor_marker = smpl::visual::MakeCubeMarker(0.5, 0.5, 0.645,
+                                                  0.3, 2.1, 0.04,
+                                                  planning_frame,
+                                                  vis_name,
+                                                  0);
+    SV_SHOW_INFO(conveyor_marker);
+#endif
     // SV_SHOW_INFO(manip_grid.getDistanceFieldVisualization(0.2));
 
     // SV_SHOW_INFO(cc.getCollisionRobotVisualization());
@@ -1236,8 +1247,8 @@ int main(int argc, char* argv[])
 
     // PlannerMode planner_mode = PlannerMode::CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_CONST_TIME_REPLAN_QUERY;
-    // PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
-    PlannerMode planner_mode = PlannerMode::PREPROCESS;
+    PlannerMode planner_mode = PlannerMode::NORMAL_QUERY;
+    // PlannerMode planner_mode = PlannerMode::PREPROCESS;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_CONST_TIME_QUERY;
     // PlannerMode planner_mode = PlannerMode::ALL_TESTS_NORMAL_QUERY;
     // PlannerMode planner_mode = PlannerMode::RANDOM_TESTS_NORMAL_QUERY;
@@ -1286,7 +1297,7 @@ int main(int argc, char* argv[])
     // std::vector<double> object_state = {0.40, 1.05, 0.0}; // invalid path example
     // std::vector<double> object_state = {0.5, 1.0, 0.0};
     // std::vector<double> object_state = {0.5, 1.0, M_PI/2};
-    std::vector<double> object_state = {0.51, 1.25, 4.014257};
+    std::vector<double> object_state = {0.45, 1.25, M_PI/2};
 
     moveit_msgs::RobotTrajectory traj;
 
